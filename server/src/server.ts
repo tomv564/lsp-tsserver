@@ -5,9 +5,9 @@
 'use strict';
 
 import {
-	StreamMessageReader, StreamMessageWriter, createConnection, IConnection, TextDocuments, TextDocument,
+	StreamMessageReader, StreamMessageWriter, createConnection, IConnection, TextDocuments,
 	Diagnostic, DiagnosticSeverity, Hover, InitializeResult, TextDocumentPositionParams, CompletionItem,
-	CompletionItemKind, Position, Location, Range, CodeActionParams, Command, ExecuteCommandParams, TextEdit, WorkspaceEdit
+	CompletionItemKind, Position, Location, Range, CodeActionParams, Command, ExecuteCommandParams, TextEdit, WorkspaceEdit, MarkedString, RenameParams, ReferenceParams
 } from 'vscode-languageserver';
 import * as ts from "typescript/lib/tsserverlibrary";
 import { uri2path, path2uri, mapDefined} from './util';
@@ -51,14 +51,15 @@ class Logger implements ts.server.Logger {
 	close(): void {
 		throw new Error("Method not implemented.");
 	}
-	hasLevel(level: ts.server.LogLevel): boolean {
+	hasLevel(_level: ts.server.LogLevel): boolean {
 		return true;
 		// throw new Error("Method not implemented.");
 	}
 	loggingEnabled(): boolean {
+		return true;
 		// throw new Error("Method not implemented.");
 	}
-	perftrc(s: string): void {
+	perftrc(_s: string): void {
 		throw new Error("Method not implemented.");
 	}
 	info(s: string): void {
@@ -71,7 +72,7 @@ class Logger implements ts.server.Logger {
 	endGroup(): void {
 		// throw new Error("Method not implemented.");
 	}
-	msg(s: string, type?: ts.server.Msg.Types): void {
+	msg(s: string, _type?: ts.server.Msg.Types): void {
 		connection.console.error(s)
 	}
 	getLogFileName(): string {
@@ -113,14 +114,14 @@ interface ProjectServiceWithInternals extends ts.server.ProjectService {
 const projectService = new ts.server.ProjectService(settings) as ProjectServiceWithInternals;
 
 function getPosition(position: Position, scriptInfo: ts.server.ScriptInfo): number {
-	return scriptInfo.lineOffsetToPosition(position.line, position.character);
+	return scriptInfo.lineOffsetToPosition(position.line + 1, position.character + 1);
 }
 
 // const options: ts.server.ProjectServiceOptions = {
 
 // }
 
-// Create a connection for the server. The connection uses Node's IPC as a transport
+// Create a connection for the server. The connection uses stdin/stdout as a transport
 let connection: IConnection = createConnection(new StreamMessageReader(process.stdin), new StreamMessageWriter(process.stdout));
 
 // Create a simple text document manager. The text document manager
@@ -150,69 +151,47 @@ connection.onInitialize((params): InitializeResult => {
 				resolveProvider: true
 			},
 			definitionProvider: true,
-			hoverProvider: true
+			renameProvider: true,
+			hoverProvider: true,
+			referencesProvider: true
 		}
 	}
 });
 
 // The content of a text document has changed. This event is emitted
 // when the text document first opened or when its content has changed.
-documents.onDidChangeContent((change) => {
-	validateTextDocument(change.document);
-});
+// documents.onDidChangeContent((change) => {
+	// validateTextDocument(change.document);
+// });
 
 // The settings interface describe the server relevant settings part
-interface Settings {
-	lspSample: ExampleSettings;
-}
+// interface Settings {
+// 	lspSample: ExampleSettings;
+// }
 
 // These are the example settings we defined in the client's package.json
 // file
-interface ExampleSettings {
-	maxNumberOfProblems: number;
-}
+// interface ExampleSettings {
+// 	maxNumberOfProblems: number;
+// }
 
 // hold the maxNumberOfProblems setting
-let maxNumberOfProblems: number;
+// let maxNumberOfProblems: number;
 // The settings have changed. Is send on server activation
 // as well.
-connection.onDidChangeConfiguration((change) => {
-	let settings = <Settings>change.settings;
-	maxNumberOfProblems = settings.lspSample.maxNumberOfProblems || 100;
-	// Revalidate any open text documents
-	documents.all().forEach(validateTextDocument);
-});
+connection.onDidChangeConfiguration((_change) => {
+	connection.console.log('We recevied an config change event');
 
-function validateTextDocument(textDocument: TextDocument): void {
-	let diagnostics: Diagnostic[] = [];
-	let lines = textDocument.getText().split(/\r?\n/g);
-	let problems = 0;
-	for (var i = 0; i < lines.length && problems < maxNumberOfProblems; i++) {
-		let line = lines[i];
-		let index = line.indexOf('typescript');
-		if (index >= 0) {
-			problems++;
-			diagnostics.push({
-				severity: DiagnosticSeverity.Warning,
-				range: {
-					start: { line: i, character: index },
-					end: { line: i, character: index + 10 }
-				},
-				message: `${line.substr(index, 10)} should be spelled TypeScript`,
-				source: 'ex'
-			});
-		}
-	}
-	// Send the computed diagnostics to VSCode.
-	connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
-}
+	// let settings = <Settings>change.settings;
+	// maxNumberOfProblems = settings.lspSample.maxNumberOfProblems || 100;
+	// Revalidate any open text documents
+	// documents.all().forEach(validateTextDocument);
+});
 
 connection.onDidChangeWatchedFiles((_change) => {
 	// Monitored files have change in VSCode
 	connection.console.log('We recevied an file change event');
 });
-
-
 
 connection.onHover((_textDocumentPosition: TextDocumentPositionParams): Hover => {
 	const filePath = uri2path(_textDocumentPosition.textDocument.uri);
@@ -236,16 +215,146 @@ connection.onHover((_textDocumentPosition: TextDocumentPositionParams): Hover =>
 
 	// const sourceFile = program.getSourceFile(filePath);
 	const info = languageService.getQuickInfoAtPosition(filePath, position)
-	const declaration = ts.displayPartsToString(info.displayParts)
+
+	const contents: (MarkedString | string)[] = []
+	// Add declaration without the kind
+	const declaration = ts.displayPartsToString(info.displayParts).replace(/^\(.+\)\s+/, '')
+	contents.push({ language: 'typescript', value: declaration })
+	// Add kind with modifiers, e.g. "method (private, ststic)", "class (exported)"
+	if (info.kind) {
+		let kind = '**' + info.kind + '**'
+		const modifiers = info.kindModifiers
+			.split(',')
+			// Filter out some quirks like "constructor (exported)"
+			.filter(mod => mod && (
+				mod !== ts.ScriptElementKindModifier.exportedModifier
+				|| info.kind !== ts.ScriptElementKind.constructorImplementationElement
+			))
+			// Make proper adjectives
+			.map(mod => {
+				switch (mod) {
+					case ts.ScriptElementKindModifier.ambientModifier: return 'ambient'
+					case ts.ScriptElementKindModifier.exportedModifier: return 'exported'
+					default: return mod
+				}
+			})
+		if (modifiers.length > 0) {
+			kind += ' _(' + modifiers.join(', ') + ')_'
+		}
+		contents.push(kind)
+	}
+	// Add documentation
+	const documentation = ts.displayPartsToString(info.documentation)
+	if (documentation) {
+		contents.push(documentation)
+	}
 
 	return {
-		contents: declaration
+		contents
 	};
+});
+
+connection.onReferences((params: ReferenceParams): Location[] => {
+	const filePath = uri2path(params.textDocument.uri);
+
+	const scriptInfo = projectService.getScriptInfoForNormalizedPath(ts.server.toNormalizedPath(filePath));
+	const position = getPosition(params.position, scriptInfo);
+
+	connection.console.log('getting project');
+	let project: ts.server.Project;
+	try {
+		project = projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false)
+		// const scriptInfo = projectService.getScriptInfoEnsuringProjectsUptoDate(filePath)
+		// project = projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(scriptInfo.path), true);
+		// projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
+	} catch (e) {
+		connection.console.error(e.message + '\n' + e.stack);
+		throw e;
+	}
+	// const project = projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
+	const languageService = project.getLanguageService();
+	const referencedSymbols = languageService.findReferences(filePath, position);
+	if (referencedSymbols.length) {
+		return referencedSymbols[0].references.map(l => {
+			connection.console.info('getting source file' + l.fileName)
+			const scriptInfo = project.getScriptInfo(l.fileName)
+			connection.console.info('got script info' + scriptInfo.fileName)
+			const sourceFile = project.getSourceFile(scriptInfo.path)
+			if (!sourceFile) {
+				connection.console.info('no source file returned');
+			}
+
+			const start = ts.getLineAndCharacterOfPosition(sourceFile, l.textSpan.start)
+			const end = ts.getLineAndCharacterOfPosition(sourceFile, l.textSpan.start + l.textSpan.length)
+			return {
+				uri: path2uri(l.fileName),
+				range: {start, end}
+			}
+		});
+	} else {
+		return [];
+	}
 });
 
 // function getProgram(filePath: string): ts.Program | undefined {
 // 	return ts.createProgram([filePath], {});
 // }
+connection.onRenameRequest((params: RenameParams): WorkspaceEdit => {
+	const filePath = uri2path(params.textDocument.uri);
+
+	const scriptInfo = projectService.getScriptInfoForNormalizedPath(ts.server.toNormalizedPath(filePath));
+	const position = getPosition(params.position, scriptInfo);
+
+	connection.console.log('getting project');
+	let project: ts.server.Project;
+	try {
+		project = projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false)
+		// const scriptInfo = projectService.getScriptInfoEnsuringProjectsUptoDate(filePath)
+		// project = projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(scriptInfo.path), true);
+		// projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
+	} catch (e) {
+		connection.console.error(e.message + '\n' + e.stack);
+		throw e;
+	}
+	// const project = projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
+	const languageService = project.getLanguageService();
+
+	// const position = ts.getPositionOfLineAndCharacter(sourceFile, params.position.line, params.position.character)
+
+		const renameInfo = languageService.getRenameInfo(filePath, position)
+		if (!renameInfo.canRename) {
+			throw new Error('This symbol cannot be renamed')
+		}
+
+		const changes: {[uri: string]: TextEdit[]} = {};
+
+		languageService.findRenameLocations(filePath, position, false, true)
+			.forEach((location: ts.RenameLocation) => {
+
+				connection.console.info('getting source file' + location.fileName)
+				const scriptInfo = project.getScriptInfo(location.fileName)
+				connection.console.info('got script info' + scriptInfo.fileName)
+				const sourceFile = project.getSourceFile(scriptInfo.path)
+				if (!sourceFile) {
+					connection.console.info('no source file returned');
+				}
+
+				const start = ts.getLineAndCharacterOfPosition(sourceFile, location.textSpan.start)
+				const end = ts.getLineAndCharacterOfPosition(sourceFile, location.textSpan.start + location.textSpan.length)
+
+				const editUri = path2uri(location.fileName)
+				const edit: TextEdit = { range: { start, end }, newText: params.newName }
+				if (changes[editUri]) {
+					changes[editUri].push(edit);
+				} else {
+					changes[editUri] = [edit];
+				}
+			});
+
+		return {
+			changes
+		};
+});
 
 // This handler provides the initial list of the completion items.
 connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): CompletionItem[] => {
@@ -333,7 +442,6 @@ connection.onDefinition((_textDocumentPosition: TextDocumentPositionParams): Loc
 
 });
 
-
 /**
  * Executes the `codeFix` command
  *
@@ -348,7 +456,7 @@ function executeCodeFixCommand(fileTextChanges: ts.FileTextChanges[]): void {
 		// const firstChangedFile = /^[a-z]:\//i.test(unixFilePath) ?
 		// 	unixFilePath.replace(/\//g, '\\') :
 		// 	unixFilePath
-	
+
 		const changes: {[uri: string]: TextEdit[]} = {}
 		for (const change of fileTextChanges) {
 			const filePath = change.fileName;
@@ -359,7 +467,7 @@ function executeCodeFixCommand(fileTextChanges: ts.FileTextChanges[]): void {
 				connection.console.error(e.message + '\n' + e.stack);
 				throw e;
 			}
-	
+
 			connection.console.info('getting source file' + filePath)
 			const scriptInfo = project.getScriptInfo(filePath)
 			connection.console.info('got script info' + scriptInfo.fileName)
@@ -367,7 +475,7 @@ function executeCodeFixCommand(fileTextChanges: ts.FileTextChanges[]): void {
 			if (!sourceFile) {
 				connection.console.info('no source file returned');
 			}
-			
+
 			const uri = path2uri(change.fileName)
 			changes[uri] = change.textChanges.map(({ span, newText }): TextEdit => ({
 				range: {
@@ -379,12 +487,12 @@ function executeCodeFixCommand(fileTextChanges: ts.FileTextChanges[]): void {
 		}
 		const edit: WorkspaceEdit = { changes }
 		connection.workspace.applyEdit(edit).then(() => connection.console.log("aplied edit"))
-		
+
 	} catch (e) {
 		connection.console.error(e.message + '\n' + e.stack);
 		throw e;
 	}
-	
+
 }
 
 
@@ -414,11 +522,11 @@ connection.onCodeAction((_codeActionParams: CodeActionParams): Command[] => {
 		const scriptInfo = project.getScriptInfoForNormalizedPath(normalizedFilePath);
 		const startPosition = getPosition(_codeActionParams.range.start, scriptInfo);
 		const endPosition = getPosition(_codeActionParams.range.end, scriptInfo);
-		
+
 		// const { startPosition, endPosition } = this.getStartAndEndPosition(args, scriptInfo);
 		const formatOptions = projectService.getFormatCodeOptions(normalizedFilePath);
 		const errorCodes: number[] = _codeActionParams.context.diagnostics.map(d => d.code).filter(c => typeof c === 'number') as number[]
-		
+
 		const codeActions = project.getLanguageService().getCodeFixesAtPosition(normalizedFilePath, startPosition, endPosition, errorCodes, formatOptions);
 		if (!codeActions) {
 			return undefined;
@@ -435,7 +543,7 @@ connection.onCodeAction((_codeActionParams: CodeActionParams): Command[] => {
 		connection.console.error(e.message + '\n' + e.stack);
 		throw e;
 	}
-	
+
 });
 
 // diagnostics code from session.ts
@@ -475,7 +583,7 @@ function logError(err: Error, cmd: string) {
 	logger.msg(msg, ts.server.Msg.Err);
 }
 
-function sendRequestCompletedEvent(requestId: number): void {
+function sendRequestCompletedEvent(_requestId: number): void {
 	// const event: protocol.RequestCompletedEvent = {
 	// 	seq: 0,
 	// 	type: "event",
