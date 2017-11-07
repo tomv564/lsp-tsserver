@@ -1,0 +1,7 @@
+out
+build
+client
+node_modules
+client/server
+.sublime-project
+.sublime-workspace
