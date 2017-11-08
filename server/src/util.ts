@@ -1,4 +1,4 @@
-import * as url from 'url'
+import * as url from "url";
 
 /**
  * Converts an abolute path to a file:// uri
@@ -8,20 +8,20 @@ import * as url from 'url'
 export function path2uri(path: string): string {
     // Require a leading slash, on windows prefixed with drive letter
     if (!/^(?:[a-z]:)?[\\\/]/i.test(path)) {
-        throw new Error(`${path} is not an absolute path`)
+        throw new Error(`${path} is not an absolute path`);
     }
 
-    const parts = path.split(/[\\\/]/)
+    const parts = path.split(/[\\\/]/);
 
     // If the first segment is a Windows drive letter, prefix with a slash and skip encoding
-    let head = parts.shift()!
-    if (head !== '') {
-        head = '/' + head
+    let head = parts.shift()!;
+    if (head !== "") {
+        head = "/" + head;
     } else {
-        head = encodeURIComponent(head)
+        head = encodeURIComponent(head);
     }
 
-    return `file://${head}/${parts.map(encodeURIComponent).join('/')}`
+    return `file://${head}/${parts.map(encodeURIComponent).join("/")}`;
 }
 
 /**
@@ -31,19 +31,19 @@ export function path2uri(path: string): string {
  * @param uri a file:// uri
  */
 export function uri2path(uri: string): string {
-    const parts = url.parse(uri)
-    if (parts.protocol !== 'file:') {
-        throw new Error('Cannot resolve non-file uri to path: ' + uri)
+    const parts = url.parse(uri);
+    if (parts.protocol !== "file:") {
+        throw new Error("Cannot resolve non-file uri to path: " + uri);
     }
 
-    let filePath = parts.pathname || ''
+    let filePath = parts.pathname || "";
 
     // If the path starts with a drive letter, return a Windows path
     if (/^\/[a-z]:\//i.test(filePath)) {
-        filePath = filePath.substr(1).replace(/\//g, '\\')
+        filePath = filePath.substr(1).replace(/\//g, "\\");
     }
 
-    return decodeURIComponent(filePath)
+    return decodeURIComponent(filePath);
 }
 
 // from compiler/core.ts

@@ -46,16 +46,19 @@ export class MultistepOperation implements NextStep {
         this.setImmediateId(undefined);
     }
 
+    // tslint:disable-next-line:member-ordering
     public immediate(action: () => void) {
         const requestId = this.requestId;
-        // TODO: re-enable 
+        // TODO: re-enable
         // Debug.assert(requestId === this.operationHost.getCurrentRequestId(), "immediate: incorrect request id");
         this.setImmediateId(this.operationHost.getServerHost().setImmediate(() => {
             this.immediateId = undefined;
             this.operationHost.executeWithRequestId(requestId, () => this.executeAction(action));
         }));
     }
+// tslint:disable-next-line:member-ordering
 
+    // tslint:disable-next-line:member-ordering
     public delay(ms: number, action: () => void) {
         const requestId = this.requestId;
         // TODO: re-enable
@@ -71,12 +74,10 @@ export class MultistepOperation implements NextStep {
         try {
             if (this.operationHost.isCancellationRequested()) {
                 stop = true;
-            }
-            else {
+            } else {
                 action(this);
             }
-        }
-        catch (e) {
+        } catch (e) {
             stop = true;
             // ignore cancellation request
             if (!(e instanceof ts.OperationCanceledException)) {

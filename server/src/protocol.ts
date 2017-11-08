@@ -1,7 +1,6 @@
-import { DiagnosticSeverity, Diagnostic, Range, CompletionItemKind, MarkedString, Hover, Location, CompletionItem, TextEdit, ParameterInformation, SignatureInformation, SignatureHelp, TextDocumentIdentifier, Command } from "vscode-languageserver-protocol";
 import * as ts from "typescript/lib/tsserverlibrary";
+import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, TextDocumentIdentifier, TextEdit } from "vscode-languageserver-protocol";
 import { path2uri } from "./util";
-
 
 /**
  * Maps string-based CompletionEntry::kind to enum-based CompletionItemKind
@@ -30,7 +29,7 @@ export const completionKinds: { [name: string]: CompletionItemKind } = {
  * Common structural base for range-based text document commands like Code Actions.
  */
 export interface TextDocumentRangeParams {
-    /**
+   /**
     * The document in which the command was invoked.
     */
    textDocument: TextDocumentIdentifier;
@@ -44,39 +43,39 @@ export interface TextDocumentRangeParams {
  * Converts a TypeScript Diagnostic to an LSP Diagnostic
  */
 export function convertTsDiagnostic(diagnostic: ts.Diagnostic): Diagnostic {
-    const text = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')
-    let range: Range = { start: {character: 0, line: 0}, end: {character: 0, line: 0} }
+    const text = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+    let range: Range = { start: {character: 0, line: 0}, end: {character: 0, line: 0} };
     if (diagnostic.file && diagnostic.start && diagnostic.length) {
         range = {
             start: diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start),
             end: diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start + diagnostic.length),
-        }
+        };
     }
     return {
         range,
         message: text,
         severity: convertDiagnosticCategory(diagnostic.category),
         code: diagnostic.code,
-        source: diagnostic.source || 'ts',
-    }
+        source: diagnostic.source || "ts",
+    };
 }
 
 export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
-    const item: CompletionItem = { label: entry.name }
+    const item: CompletionItem = { label: entry.name };
 
-    const kind = completionKinds[entry.kind]
-    if (kind && typeof(kind) == 'number') {
-        item.kind = kind
+    const kind = completionKinds[entry.kind];
+    if (kind && typeof(kind) === "number") {
+        item.kind = kind;
     }
     if (entry.sortText) {
-        item.sortText = entry.sortText
+        item.sortText = entry.sortText;
     }
 
     // context for future resolve requests:
     // item.data = {
-    // 	uri,
-    // 	offset,
-    // 	entryName: entry.name,
+    //  uri,
+    //  offset,
+    //  entryName: entry.name,
     // }
     return item;
 }
@@ -84,81 +83,81 @@ export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
 export function toCommand(action: ts.CodeAction): Command {
     return {
         title: action.description,
-        command: 'codeFix',
+        command: "codeFix",
         arguments: action.changes,
-    }
+    };
 }
 
 export function toLocation(sourceFile: ts.SourceFile, span: ts.TextSpan): Location {
-    const start = ts.getLineAndCharacterOfPosition(sourceFile, span.start)
-    const end = ts.getLineAndCharacterOfPosition(sourceFile, span.start + span.length)
+    const start = ts.getLineAndCharacterOfPosition(sourceFile, span.start);
+    const end = ts.getLineAndCharacterOfPosition(sourceFile, span.start + span.length);
     return {
         uri: path2uri(sourceFile.fileName),
         range: {start, end}
-    }
+    };
 }
 
 export function toTextEdit(sourceFile: ts.SourceFile, textSpan: ts.TextSpan, newName: string): TextEdit {
-    const start = ts.getLineAndCharacterOfPosition(sourceFile, textSpan.start)
-    const end = ts.getLineAndCharacterOfPosition(sourceFile, textSpan.start + textSpan.length)
-    return { range: { start, end }, newText: newName }
+    const start = ts.getLineAndCharacterOfPosition(sourceFile, textSpan.start);
+    const end = ts.getLineAndCharacterOfPosition(sourceFile, textSpan.start + textSpan.length);
+    return { range: { start, end }, newText: newName };
 }
 
 export function toSignatureHelp(signatures: ts.SignatureHelpItems): SignatureHelp {
     const signatureInformations = signatures.items.map((item): SignatureInformation => {
-        const prefix = ts.displayPartsToString(item.prefixDisplayParts)
-        const params = item.parameters.map(p => ts.displayPartsToString(p.displayParts)).join(', ')
-        const suffix = ts.displayPartsToString(item.suffixDisplayParts)
+        const prefix = ts.displayPartsToString(item.prefixDisplayParts);
+        const params = item.parameters.map((p) => ts.displayPartsToString(p.displayParts)).join(", ");
+        const suffix = ts.displayPartsToString(item.suffixDisplayParts);
         const parameters = item.parameters.map((p): ParameterInformation => ({
             label: ts.displayPartsToString(p.displayParts),
             documentation: ts.displayPartsToString(p.documentation),
-        }))
+        }));
         return {
             label: prefix + params + suffix,
             documentation: ts.displayPartsToString(item.documentation),
             parameters,
-        }
-    })
+        };
+    });
 
     return {
         signatures: signatureInformations,
         activeSignature: signatures.selectedItemIndex,
         activeParameter: signatures.argumentIndex,
-    }
+    };
 }
 
 export function toHover(info: ts.QuickInfo): Hover {
-    const contents: (MarkedString | string)[] = []
+    const contents: Array<MarkedString | string> = [];
     // Add declaration without the kind
-    const declaration = ts.displayPartsToString(info.displayParts).replace(/^\(.+\)\s+/, '')
-    contents.push({ language: 'typescript', value: declaration })
+    const declaration = ts.displayPartsToString(info.displayParts).replace(/^\(.+\)\s+/, "");
+    contents.push({ language: "typescript", value: declaration });
     // Add kind with modifiers, e.g. "method (private, ststic)", "class (exported)"
     if (info.kind) {
-        let kind = '**' + info.kind + '**'
+        let kind = "**" + info.kind + "**";
         const modifiers = info.kindModifiers
-            .split(',')
+            .split(",")
             // Filter out some quirks like "constructor (exported)"
-            .filter(mod => mod && (
+            .filter((mod) => mod && (
                 mod !== ts.ScriptElementKindModifier.exportedModifier
                 || info.kind !== ts.ScriptElementKind.constructorImplementationElement
             ))
             // Make proper adjectives
-            .map(mod => {
+            .map((mod) => {
                 switch (mod) {
-                    case ts.ScriptElementKindModifier.ambientModifier: return 'ambient'
-                    case ts.ScriptElementKindModifier.exportedModifier: return 'exported'
-                    default: return mod
+                    case ts.ScriptElementKindModifier.ambientModifier: return "ambient";
+                    case ts.ScriptElementKindModifier.exportedModifier: return "exported";
+                    default: return mod;
                 }
-            })
+            });
         if (modifiers.length > 0) {
-            kind += ' _(' + modifiers.join(', ') + ')_'
+            kind += " _(" + modifiers.join(", ") + ")_";
         }
-        contents.push(kind)
+        contents.push(kind);
     }
     // Add documentation
-    const documentation = ts.displayPartsToString(info.documentation)
+    const documentation = ts.displayPartsToString(info.documentation);
     if (documentation) {
-        contents.push(documentation)
+        contents.push(documentation);
     }
 
     return {
@@ -174,11 +173,11 @@ export function toHover(info: ts.QuickInfo): Hover {
 export function convertDiagnosticCategory(category: ts.DiagnosticCategory): DiagnosticSeverity {
     switch (category) {
         case ts.DiagnosticCategory.Error:
-            return DiagnosticSeverity.Error
+            return DiagnosticSeverity.Error;
         case ts.DiagnosticCategory.Warning:
-            return DiagnosticSeverity.Warning
+            return DiagnosticSeverity.Warning;
         case ts.DiagnosticCategory.Message:
-            return DiagnosticSeverity.Information
+            return DiagnosticSeverity.Information;
             // unmapped: DiagnosticSeverity.Hint
     }
 }

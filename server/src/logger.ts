@@ -1,38 +1,38 @@
-import { IConnection } from "vscode-languageserver/lib/main";
+import { IConnection } from "vscode-languageserver";
 
 export class LSPLogger implements ts.server.Logger {
-    
+
     constructor(private connection: IConnection) {}
 
-	close(): void {
-		throw new Error("Method not implemented.");
-	}
-	hasLevel(_level: ts.server.LogLevel): boolean {
-		return true;
-		// throw new Error("Method not implemented.");
-	}
-	loggingEnabled(): boolean {
-		return true;
-		// throw new Error("Method not implemented.");
-	}
-	perftrc(_s: string): void {
-		throw new Error("Method not implemented.");
-	}
-	info(s: string): void {
-		this.connection.console.info(s)
-		// throw new Error("Method not implemented.");
-	}
-	startGroup(): void {
-		// throw new Error("Method not implemented.");
-	}
-	endGroup(): void {
-		// throw new Error("Method not implemented.");
-	}
-	msg(s: string, _type?: ts.server.Msg.Types): void {
-		this.connection.console.error(s)
-	}
-	getLogFileName(): string {
-		throw new Error("Method not implemented.");
-	}
+    public close(): void {
+        throw new Error("Method not implemented.");
+    }
+    public hasLevel(_level: ts.server.LogLevel): boolean {
+        return true;
+        // throw new Error("Method not implemented.");
+    }
+    public loggingEnabled(): boolean {
+        return true;
+        // throw new Error("Method not implemented.");
+    }
+    public perftrc(_s: string): void {
+        throw new Error("Method not implemented.");
+    }
+    public info(s: string): void {
+        this.connection.console.info(s);
+        // throw new Error("Method not implemented.");
+    }
+    public startGroup(): void {
+        // throw new Error("Method not implemented.");
+    }
+    public endGroup(): void {
+        // throw new Error("Method not implemented.");
+    }
+    public msg(s: string, _type?: ts.server.Msg.Types): void {
+        this.connection.console.error(s);
+    }
+    public getLogFileName(): string {
+        throw new Error("Method not implemented.");
+    }
 
 }
