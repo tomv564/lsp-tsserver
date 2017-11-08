@@ -4,9 +4,9 @@ import { MultistepOperationHost, MultistepOperation, NextStep } from "./multiste
 import {
     IConnection,
 	Hover, InitializeResult, TextDocumentPositionParams, CompletionItem,
-	Position, Location, CodeActionParams, Command, ExecuteCommandParams, TextEdit, WorkspaceEdit, RenameParams, ReferenceParams, TextDocumentSyncKind
+	Position, Location, CodeActionParams, Command, ExecuteCommandParams, TextEdit, WorkspaceEdit, RenameParams, ReferenceParams, TextDocumentSyncKind, SignatureHelp
 } from 'vscode-languageserver';
-import { convertTsDiagnostic, toHover, toLocation, toCompletionItem, toTextEdit } from "./protocol";
+import { convertTsDiagnostic, toHover, toLocation, toCompletionItem, toTextEdit, toSignatureHelp } from "./protocol";
 import { LSPLogger } from "./logger";
 
 const host = {
@@ -72,7 +72,7 @@ export class Session {
 
     private eventHandler: ts.server.ProjectServiceEventHandler;
 
-    private host: ts.server.ServerHost;
+    // private host: ts.server.ServerHost;
     private cancellationToken: ts.server.ServerCancellationToken;
     protected typingsInstaller: ITypingsInstaller;
     // private byteLength: (buf: string, encoding?: string) => number;
@@ -85,7 +85,7 @@ export class Session {
 
     constructor(connection: IConnection, opts: SessionOptions) {
         this.connection = connection;
-        this.host = opts.host;
+        // this.host = opts.host;
         this.cancellationToken = opts.cancellationToken;
         this.typingsInstaller = opts.typingsInstaller;
         // this.byteLength = opts.byteLength;
@@ -217,9 +217,9 @@ export class Session {
     
         // After the server has started the client sends an initilize request. The server receives
         // in the passed params the rootPath of the workspace plus the client capabilites.
-        let workspaceRoot: string;
-        connection.onInitialize((params): InitializeResult => {
-            workspaceRoot = params.rootPath;
+        // let workspaceRoot: string;
+        connection.onInitialize((_params): InitializeResult => {
+            // workspaceRoot = params.rootPath;
             return {
                 capabilities: {
                     // Tell the client that the server works in FULL text document sync mode
@@ -230,12 +230,15 @@ export class Session {
                         commands: []
                     },
                     completionProvider: {
-                        resolveProvider: true
+                        resolveProvider: false
                     },
                     definitionProvider: true,
                     renameProvider: true,
                     hoverProvider: true,
-                    referencesProvider: true
+                    referencesProvider: true,
+                    signatureHelpProvider: {
+                        triggerCharacters: ['(', ','],
+                    }    
                 }
             }
         });
@@ -307,7 +310,14 @@ export class Session {
                 }).reduce((_prev, curr) => curr, [])
         });
     
-    
+        connection.onSignatureHelp((_textDocumentPosition: TextDocumentPositionParams): SignatureHelp => {
+            const empty: SignatureHelp = { signatures: [], activeParameter: 0, activeSignature: 0 }
+            return this.getProjectScriptInfoAt(_textDocumentPosition)
+                .map(({project, scriptInfo, position}) => {
+                    const signatures = project.getLanguageService().getSignatureHelpItems(scriptInfo.fileName, position);
+                    return toSignatureHelp(signatures) 
+                }).reduce((_prev, curr) => curr, empty)
+        });
     
         connection.onExecuteCommand((params: ExecuteCommandParams): any => {
             switch (params.command) {

@@ -1,4 +1,4 @@
-import { DiagnosticSeverity, Diagnostic, Range, CompletionItemKind, MarkedString, Hover, Location, CompletionItem, TextEdit } from "vscode-languageserver-protocol";
+import { DiagnosticSeverity, Diagnostic, Range, CompletionItemKind, MarkedString, Hover, Location, CompletionItem, TextEdit, ParameterInformation, SignatureInformation, SignatureHelp } from "vscode-languageserver-protocol";
 import * as ts from "typescript/lib/tsserverlibrary";
 import { path2uri } from "./util";
 
@@ -80,6 +80,29 @@ export function toTextEdit(sourceFile: ts.SourceFile, location: ts.RenameLocatio
     const start = ts.getLineAndCharacterOfPosition(sourceFile, location.textSpan.start)
     const end = ts.getLineAndCharacterOfPosition(sourceFile, location.textSpan.start + location.textSpan.length)
     return { range: { start, end }, newText: newName }
+}
+
+export function toSignatureHelp(signatures: ts.SignatureHelpItems): SignatureHelp {
+    const signatureInformations = signatures.items.map((item): SignatureInformation => {
+        const prefix = ts.displayPartsToString(item.prefixDisplayParts)
+        const params = item.parameters.map(p => ts.displayPartsToString(p.displayParts)).join(', ')
+        const suffix = ts.displayPartsToString(item.suffixDisplayParts)
+        const parameters = item.parameters.map((p): ParameterInformation => ({
+            label: ts.displayPartsToString(p.displayParts),
+            documentation: ts.displayPartsToString(p.documentation),
+        }))
+        return {
+            label: prefix + params + suffix,
+            documentation: ts.displayPartsToString(item.documentation),
+            parameters,
+        }
+    })
+
+    return {
+        signatures: signatureInformations,
+        activeSignature: signatures.selectedItemIndex,
+        activeParameter: signatures.argumentIndex,
+    }
 }
 
 export function toHover(info: ts.QuickInfo): Hover {
