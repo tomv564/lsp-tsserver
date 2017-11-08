@@ -390,43 +390,50 @@ export class Session {
         });
     }
 
-    private semanticCheck(file: ts.server.NormalizedPath, project: ts.server.Project) {
-        try {
-            // let diags: ReadonlyArray<Diagnostic> = [];
-            //TODO: re-enable
-            // if (!isDeclarationFileInJSOnlyNonConfiguredProject(project, file)) {
-            // 	diags = project.getLanguageService().getSemanticDiagnostics(file);
-            // }
-            // TODO: combine these two.
-            const diags: ReadonlyArray<ts.Diagnostic> = project.getLanguageService().getSemanticDiagnostics(file);
-            this.connection.sendDiagnostics({
-                uri: path2uri(file),
-                diagnostics: diags.map(convertTsDiagnostic)
-            });
-            // const bakedDiags = diags.map((diag) => formatDiag(file, project, diag));
-            // this.event<protocol.DiagnosticEventBody>({ file, diagnostics: bakedDiags }, "semanticDiag");
-        }
-        catch (err) {
-            this.logError(err, "semantic check");
-        }
+    private combinedCheck(file: ts.server.NormalizedPath, project: ts.server.Project) {
+        const diags: ReadonlyArray<ts.Diagnostic> = project.getLanguageService().getSyntacticDiagnostics(file)
+            .concat(project.getLanguageService().getSemanticDiagnostics(file));
+        this.connection.sendDiagnostics({
+            uri: path2uri(file),
+            diagnostics: diags.map(convertTsDiagnostic)
+        });   
     }
 
-    private syntacticCheck(file: ts.server.NormalizedPath, project: ts.server.Project) {
-        try {
-            const diags = project.getLanguageService().getSyntacticDiagnostics(file);
-            if (diags) {
-                this.connection.sendDiagnostics({
-                    uri: path2uri(file),
-                    diagnostics: diags.map(convertTsDiagnostic)
-                });
-                // const bakedDiags = diags.map((diag) => formatDiag(file, project, diag));
-                // this.event<protocol.DiagnosticEventBody>({ file, diagnostics: bakedDiags }, "syntaxDiag");
-            }
-        }
-        catch (err) {
-            this.logError(err, "syntactic check");
-        }
-    }
+    // private semanticCheck(file: ts.server.NormalizedPath, project: ts.server.Project) {
+    //     try {
+    //         // let diags: ReadonlyArray<Diagnostic> = [];
+    //         //TODO: re-enable
+    //         // if (!isDeclarationFileInJSOnlyNonConfiguredProject(project, file)) {
+    //         // 	diags = project.getLanguageService().getSemanticDiagnostics(file);
+    //         // }
+    //         // TODO: combine these two.
+    //         const diags: ReadonlyArray<ts.Diagnostic> = project.getLanguageService().getSemanticDiagnostics(file);
+    //         this.connection.sendDiagnostics({
+    //             uri: path2uri(file),
+    //             diagnostics: diags.map(convertTsDiagnostic)
+    //         });
+    //     }
+    //     catch (err) {
+    //         this.logError(err, "semantic check");
+    //     }
+    // }
+
+    // private syntacticCheck(file: ts.server.NormalizedPath, project: ts.server.Project) {
+    //     try {
+    //         const diags = project.getLanguageService().getSyntacticDiagnostics(file);
+    //         if (diags) {
+    //             this.connection.sendDiagnostics({
+    //                 uri: path2uri(file),
+    //                 diagnostics: diags.map(convertTsDiagnostic)
+    //             });
+    //             // const bakedDiags = diags.map((diag) => formatDiag(file, project, diag));
+    //             // this.event<protocol.DiagnosticEventBody>({ file, diagnostics: bakedDiags }, "syntaxDiag");
+    //         }
+    //     }
+    //     catch (err) {
+    //         this.logError(err, "syntactic check");
+    //     }
+    // }
 
     private updateErrorCheck(next: NextStep, checkList: ts.server.PendingErrorCheck[], ms: number, requireOpen = true) {
         const seq = this.changeSeq;
@@ -438,15 +445,20 @@ export class Session {
                 const checkSpec = checkList[index];
                 index++;
                 if (checkSpec.project.containsFile(checkSpec.fileName, requireOpen)) {
-                    this.syntacticCheck(checkSpec.fileName, checkSpec.project);
-                    if (this.changeSeq === seq) {
-                        next.immediate(() => {
-                            this.semanticCheck(checkSpec.fileName, checkSpec.project);
-                            if (checkList.length > index) {
-                                next.delay(followMs, checkOne);
-                            }
-                        });
+                    this.combinedCheck(checkSpec.fileName, checkSpec.project);
+                    if (checkList.length > index) {
+                        next.delay(followMs, checkOne)
                     }
+
+                    // this.syntacticCheck(checkSpec.fileName, checkSpec.project);
+                    // if (this.changeSeq === seq) {
+                    //     next.immediate(() => {
+                    //         this.semanticCheck(checkSpec.fileName, checkSpec.project);
+                    //         if (checkList.length > index) {
+                    //             next.delay(followMs, checkOne);
+                    //         }
+                    //     });
+                    // }
                 }
             }
         };
