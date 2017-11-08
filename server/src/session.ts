@@ -462,23 +462,27 @@ export class Session {
                 const { openFiles } = event.data;
                 this.projectsUpdatedInBackgroundEvent(openFiles);
                 break;
-            // case ts.server.ConfigFileDiagEvent:
-            // 	const { triggerFile, configFileName: configFile, diagnostics } = event.data;
-            // 	const bakedDiags = map(diagnostics, diagnostic => formatConfigFileDiag(diagnostic, /*includeFileName*/ true));
-            // 	this.event<protocol.ConfigFileDiagnosticEventBody>({
-            // 		triggerFile,
-            // 		configFile,
-            // 		diagnostics: bakedDiags
-            // 	}, "configFileDiag");
-            // 	break;
-            // case ts.server.ProjectLanguageServiceStateEvent: {
-            // 	const eventName: protocol.ProjectLanguageServiceStateEventName = "projectLanguageServiceState";
-            // 	this.event<protocol.ProjectLanguageServiceStateEventBody>({
-            // 		projectName: event.data.project.getProjectName(),
-            // 		languageServiceEnabled: event.data.languageServiceEnabled
-            // 	}, eventName);
-            // 	break;
-            // }
+            case ts.server.ConfigFileDiagEvent:
+                // TODO: send config file diagnostics
+                this.connection.console.log("Received config file diagnostics: " + event.data.diagnostics.map(d => d.messageText).join(", ")) 
+                // const { triggerFile, configFileName: configFile, diagnostics } = event.data;
+            	// const bakedDiags = map(diagnostics, diagnostic => formatConfigFileDiag(diagnostic, /*includeFileName*/ true));
+            	// this.event<protocol.ConfigFileDiagnosticEventBody>({
+            	// 	triggerFile,
+            	// 	configFile,
+            	// 	diagnostics: bakedDiags
+            	// }, "configFileDiag");
+            	break;
+            case ts.server.ProjectLanguageServiceStateEvent: 
+                const projectName = event.data.project.getProjectName();
+                const isEnabled = event.data.languageServiceEnabled;
+                this.connection.console.log(`Received lang service state event: project ${projectName} is ${isEnabled}`)
+            	// const eventName: protocol.ProjectLanguageServiceStateEventName = "projectLanguageServiceState";
+            	// this.event<protocol.ProjectLanguageServiceStateEventBody>({
+            	// 	projectName: event.data.project.getProjectName(),
+            	// 	languageServiceEnabled: event.data.languageServiceEnabled
+            	// }, eventName);
+            	break;
         }
     }
 
@@ -493,13 +497,6 @@ export class Session {
     }
 
     private sendRequestCompletedEvent(_requestId: number): void {
-        // const event: protocol.RequestCompletedEvent = {
-        // 	seq: 0,
-        // 	type: "event",
-        // 	event: "requestCompleted",
-        // 	body: { request_seq: requestId }
-        // };
-        // this.send(event);
     }
 
     private getDiagnostics(next: NextStep, delay: number, fileNames: string[]): void {
