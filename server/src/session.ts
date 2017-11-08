@@ -7,31 +7,41 @@ import {
 	Position, Location, CodeActionParams, Command, ExecuteCommandParams, TextEdit, WorkspaceEdit, RenameParams, ReferenceParams, TextDocumentSyncKind, SignatureHelp, TextDocumentIdentifier
 } from 'vscode-languageserver';
 import { convertTsDiagnostic, toHover, toLocation, toCompletionItem, toCommand, toTextEdit, toSignatureHelp, TextDocumentRangeParams } from "./protocol";
-import { LSPLogger } from "./logger";
 
-const host = {
-	setTimeout: setTimeout,
-	clearTimeout: clearTimeout,
-	setImmediate: setImmediate,
-	clearImmediate: clearImmediate,
-	...ts.sys
-}
-
-export function configureSession(connection: IConnection): SessionOptions {
-    return {
-        host: host,
-        cancellationToken: ts.server.nullCancellationToken,
-        useSingleInferredProject: false,
-        useInferredProjectPerProjectRoot: false,
-        typingsInstaller: ts.server.nullTypingsInstaller,
-        logger: new LSPLogger(connection),
-        // globalPlugins: [],
-        // pluginProbeLocations: [],
-        // allowLocalPluginLoads: false
+declare module "typescript/lib/tsserverlibrary" {
+    namespace server {
+        class GcTimer {
+            constructor(host: ServerHost, delay: number, logger: ts.server.Logger);
+            scheduleCollect(): void;
+        }    
     }
 }
 
-export interface SessionOptions {
+
+
+// const host = {
+// 	setTimeout: setTimeout,
+// 	clearTimeout: clearTimeout,
+// 	setImmediate: setImmediate,
+// 	clearImmediate: clearImmediate,
+// 	...ts.sys
+// }
+
+// export function configureSession(connection: IConnection): SessionOptions {
+//     return {
+//         host: host,
+//         cancellationToken: ts.server.nullCancellationToken,
+//         useSingleInferredProject: false,
+//         useInferredProjectPerProjectRoot: false,
+//         typingsInstaller: ts.server.nullTypingsInstaller,
+//         logger: new LSPLogger(connection),
+//         // globalPlugins: [],
+//         // pluginProbeLocations: [],
+//         // allowLocalPluginLoads: false
+//     }
+// }
+
+export interface LSPSessionOptions {
     host: ts.server.ServerHost;
     cancellationToken: ts.server.ServerCancellationToken;
     useSingleInferredProject: boolean;
@@ -41,7 +51,7 @@ export interface SessionOptions {
     // hrtime: (start?: number[]) => number[];
     logger: ts.server.Logger;
     // canUseEvents: boolean;
-    eventHandler?: ts.server.ProjectServiceEventHandler;
+    // // eventHandler?: ts.server.ProjectServiceEventHandler;
     throttleWaitMilliseconds?: number;
 
     globalPlugins?: ReadonlyArray<string>;
@@ -62,6 +72,12 @@ interface ProjectScriptInfoRange extends ProjectScriptInfo {
     start: number;
     end: number;
 }
+// declare module "./observable" {
+//     interface Observable<T> {
+//         map<U>(f: (x: T) => U): Observable<U>;
+//     }
+// }
+
 
 interface ProjectServiceWithInternals extends ts.server.ProjectService {
     applyChangesToFile(scriptInfo: ts.server.ScriptInfo, changes: ts.TextChange[]): void;
@@ -71,7 +87,7 @@ type ITypingsInstaller = any;
 // type GcTimer = any;
 
 export class Session {
-    // private readonly gcTimer: GcTimer;
+    private readonly gcTimer: ts.server.GcTimer;
     protected projectService: ProjectServiceWithInternals;
     private changeSeq = 0;
 
@@ -91,7 +107,7 @@ export class Session {
     private openFiles = new Set<string>();
     private connection: IConnection;    
 
-    constructor(connection: IConnection, opts: SessionOptions) {
+    constructor(connection: IConnection, opts: LSPSessionOptions) {
         this.connection = connection;
         // this.host = opts.host;
         this.cancellationToken = opts.cancellationToken;
@@ -106,7 +122,7 @@ export class Session {
         this.eventHandler = (event => this.defaultEventHandler(event))
 
         const settings: ts.server.ProjectServiceOptions = {
-            host: host,
+            host: opts.host,
             logger: opts.logger,
             cancellationToken: opts.cancellationToken,
             useSingleInferredProject: opts.useSingleInferredProject,
@@ -114,15 +130,15 @@ export class Session {
             typingsInstaller: opts.typingsInstaller,
             //throttleWaitMilliseconds,
             eventHandler: this.eventHandler,
-            // globalPlugins: opts.globalPlugins,
-            // pluginProbeLocations: opts.pluginProbeLocations,
-            // allowLocalPluginLoads: opts.allowLocalPluginLoads
+            globalPlugins: opts.globalPlugins,
+            pluginProbeLocations: opts.pluginProbeLocations,
+            allowLocalPluginLoads: opts.allowLocalPluginLoads
         };
 
         const multistepOperationHost: MultistepOperationHost = {
             executeWithRequestId: (requestId, action) => this.executeWithRequestId(requestId, action),
             getCurrentRequestId: () => this.currentRequestId,
-            getServerHost: () => host,
+            getServerHost: () => opts.host,
             logError: (err, cmd) => this.logError(err, cmd),
             sendRequestCompletedEvent: requestId => this.sendRequestCompletedEvent(requestId),
             isCancellationRequested: () => this.cancellationToken.isCancellationRequested()
@@ -131,9 +147,9 @@ export class Session {
         this.errorCheck = new MultistepOperation(multistepOperationHost);
         this.projectService = new ts.server.ProjectService(settings) as ProjectServiceWithInternals;
 
-        // this.gcTimer = new ts.server.GcTimer(this.host, /*delay*/ 7000, this.logger);
+        this.gcTimer = new ts.server.GcTimer(opts.host, /*delay*/ 7000, this.logger);
         // TODO: on every message:
-        // this.gcTimer.scheduleCollect();
+        
 
         connection.onDidOpenTextDocument((params) => {
             try {
@@ -347,6 +363,7 @@ export class Session {
     }
 
     private getProjectScriptInfo(textDocument: TextDocumentIdentifier): ProjectScriptInfo[] {
+        this.gcTimer.scheduleCollect(); // tsserver runs this on every request.
         const filePath = uri2path(textDocument.uri);        
         const scriptInfo = this.projectService.getScriptInfoForNormalizedPath(ts.server.toNormalizedPath(filePath));
       
@@ -574,7 +591,6 @@ export class Session {
     }
 }
 
-export function createSession(connection: IConnection): Session {
-    const options = configureSession(connection);
+export function createSession(connection: IConnection, options: LSPSessionOptions): Session {
     return new Session(connection, options);
 }
