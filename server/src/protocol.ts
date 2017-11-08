@@ -1,4 +1,4 @@
-import { DiagnosticSeverity, Diagnostic, Range, CompletionItemKind, MarkedString, Hover, Location, CompletionItem, TextEdit, ParameterInformation, SignatureInformation, SignatureHelp } from "vscode-languageserver-protocol";
+import { DiagnosticSeverity, Diagnostic, Range, CompletionItemKind, MarkedString, Hover, Location, CompletionItem, TextEdit, ParameterInformation, SignatureInformation, SignatureHelp, TextDocumentIdentifier, Command } from "vscode-languageserver-protocol";
 import * as ts from "typescript/lib/tsserverlibrary";
 import { path2uri } from "./util";
 
@@ -25,6 +25,20 @@ export const completionKinds: { [name: string]: CompletionItemKind } = {
     value: CompletionItemKind.Value,
     variable: CompletionItemKind.Variable
 };
+
+/**
+ * Common structural base for range-based text document commands like Code Actions.
+ */
+export interface TextDocumentRangeParams {
+    /**
+    * The document in which the command was invoked.
+    */
+   textDocument: TextDocumentIdentifier;
+   /**
+    * The range for which the command was invoked.
+    */
+   range: Range;
+}
 
 /**
  * Converts a TypeScript Diagnostic to an LSP Diagnostic
@@ -67,6 +81,14 @@ export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
     return item;
 }
 
+export function toCommand(action: ts.CodeAction): Command {
+    return {
+        title: action.description,
+        command: 'codeFix',
+        arguments: action.changes,
+    }
+}
+
 export function toLocation(sourceFile: ts.SourceFile, span: ts.TextSpan): Location {
     const start = ts.getLineAndCharacterOfPosition(sourceFile, span.start)
     const end = ts.getLineAndCharacterOfPosition(sourceFile, span.start + span.length)
@@ -76,9 +98,9 @@ export function toLocation(sourceFile: ts.SourceFile, span: ts.TextSpan): Locati
     }
 }
 
-export function toTextEdit(sourceFile: ts.SourceFile, location: ts.RenameLocation, newName: string): TextEdit {
-    const start = ts.getLineAndCharacterOfPosition(sourceFile, location.textSpan.start)
-    const end = ts.getLineAndCharacterOfPosition(sourceFile, location.textSpan.start + location.textSpan.length)
+export function toTextEdit(sourceFile: ts.SourceFile, textSpan: ts.TextSpan, newName: string): TextEdit {
+    const start = ts.getLineAndCharacterOfPosition(sourceFile, textSpan.start)
+    const end = ts.getLineAndCharacterOfPosition(sourceFile, textSpan.start + textSpan.length)
     return { range: { start, end }, newText: newName }
 }
 

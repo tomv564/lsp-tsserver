@@ -4,9 +4,9 @@ import { MultistepOperationHost, MultistepOperation, NextStep } from "./multiste
 import {
     IConnection,
 	Hover, InitializeResult, TextDocumentPositionParams, CompletionItem,
-	Position, Location, CodeActionParams, Command, ExecuteCommandParams, TextEdit, WorkspaceEdit, RenameParams, ReferenceParams, TextDocumentSyncKind, SignatureHelp
+	Position, Location, CodeActionParams, Command, ExecuteCommandParams, TextEdit, WorkspaceEdit, RenameParams, ReferenceParams, TextDocumentSyncKind, SignatureHelp, TextDocumentIdentifier
 } from 'vscode-languageserver';
-import { convertTsDiagnostic, toHover, toLocation, toCompletionItem, toTextEdit, toSignatureHelp } from "./protocol";
+import { convertTsDiagnostic, toHover, toLocation, toCompletionItem, toCommand, toTextEdit, toSignatureHelp, TextDocumentRangeParams } from "./protocol";
 import { LSPLogger } from "./logger";
 
 const host = {
@@ -49,10 +49,18 @@ export interface SessionOptions {
     allowLocalPluginLoads?: boolean;
 }
 
-interface ProjectScriptInfoLocation {
-    project: ts.server.Project,
-    scriptInfo: ts.server.ScriptInfo,
-    position: number
+interface ProjectScriptInfo {
+    project: ts.server.Project;
+    scriptInfo: ts.server.ScriptInfo;
+}
+
+interface ProjectScriptInfoLocation extends ProjectScriptInfo {
+    position: number;
+}
+
+interface ProjectScriptInfoRange extends ProjectScriptInfo {
+    start: number;
+    end: number;
 }
 
 interface ProjectServiceWithInternals extends ts.server.ProjectService {
@@ -128,9 +136,6 @@ export class Session {
         // this.gcTimer.scheduleCollect();
 
         connection.onDidOpenTextDocument((params) => {
-            // A text document got opened in VSCode.
-            // params.uri uniquely identifies the document. For documents store on disk this is a file URI.
-            // params.text the initial full content of the document.
             try {
                 const fileName = uri2path(params.textDocument.uri);
                 connection.console.log(`${fileName} opened.`);
@@ -148,16 +153,6 @@ export class Session {
             }
         });
         connection.onDidChangeTextDocument((params) => {
-            // The content of a text document did change in VSCode.
-            // params.uri uniquely identifies the document.
-            // params.contentChanges describe the content changes to the document.
-            // connection.console.log(`${params.textDocument.uri} changed: ${JSON.stringify(params.contentChanges)}`);
-            // try {
-                // this.projectService.(uri2path(params.textDocument.uri), params.textDocument.text);
-            // } catch (e) {
-            // 	connection.console.error(e.message + '\n' + e.stack);
-            // 	throw e;
-            // }
             try {
                 const filePath = uri2path(params.textDocument.uri)
                 const scriptInfo = this.projectService.getScriptInfo(filePath);
@@ -200,9 +195,6 @@ export class Session {
     
         });
         connection.onDidCloseTextDocument((params) => {
-            // A text document got closed in VSCode.
-            // params.uri uniquely identifies the document.
-            // connection.console.log(`${params.textDocument.uri} closed.`);
             const fileName = uri2path(params.textDocument.uri);
             try {
                 this.projectService.closeClientFile(fileName);
@@ -276,7 +268,7 @@ export class Session {
         
                     project.getLanguageService().findRenameLocations(scriptInfo.fileName, position, false, true)
                         .forEach((location: ts.RenameLocation) => {
-                            const edit = toTextEdit(this.getSourceFile(project, location.fileName), location, _renameParams.newName)
+                            const edit = toTextEdit(this.getSourceFile(project, location.fileName), location.textSpan, _renameParams.newName)
                             const editUri = path2uri(location.fileName)
                             if (changes[editUri]) {
                                 changes[editUri].push(edit);
@@ -322,56 +314,28 @@ export class Session {
         connection.onExecuteCommand((params: ExecuteCommandParams): any => {
             switch (params.command) {
                 case 'codeFix':
-                    // if (!params.arguments || params.arguments.length < 1) {
-                    // 	return Observable.throw(new Error(`Command ${params.command} requires arguments`))
-                    // }
+                    if (!params.arguments || params.arguments.length < 1) {
+                    	throw new Error(`Command ${params.command} requires arguments`)
+                    }
                     return this.executeCodeFixCommand(params.arguments)
                 default:
                     throw new Error(`Unknown command ${params.command}`);
             }});
     
         connection.onCodeAction((_codeActionParams: CodeActionParams): Command[] => {
-            try
-            {
-                const filePath = uri2path(_codeActionParams.textDocument.uri);
-                const normalizedFilePath = ts.server.toNormalizedPath(filePath);
-                let project: ts.server.Project;
-                try {
-                    project = this.projectService.getDefaultProjectForFile(normalizedFilePath, false)
-                } catch (e) {
-                    connection.console.error(e.message + '\n' + e.stack);
-                    throw e;
-                }
-                const scriptInfo = project.getScriptInfoForNormalizedPath(normalizedFilePath);
-                const startPosition = this.getPosition(_codeActionParams.range.start, scriptInfo);
-                const endPosition = this.getPosition(_codeActionParams.range.end, scriptInfo);
-    
-                // const { startPosition, endPosition } = this.getStartAndEndPosition(args, scriptInfo);
-                const formatOptions = this.projectService.getFormatCodeOptions(normalizedFilePath);
-                const errorCodes: number[] = _codeActionParams.context.diagnostics.map(d => d.code).filter(c => typeof c === 'number') as number[]
-    
-                const codeActions = project.getLanguageService().getCodeFixesAtPosition(normalizedFilePath, startPosition, endPosition, errorCodes, formatOptions);
-                if (!codeActions) {
-                    return undefined;
-                }
-                return codeActions.map(action => {
-                    return {
-                        title: action.description,
-                        command: 'codeFix',
-                        arguments: action.changes,
-                    } as Command
-                })
-            }
-            catch (e) {
-                connection.console.error(e.message + '\n' + e.stack);
-                throw e;
-            }
-    
+            return this.getProjectScriptInfoFor(_codeActionParams)
+                .map( ({project, scriptInfo, start, end}) => {
+                    const errorCodes = _codeActionParams.context.diagnostics
+                        .map(c => c.code)
+                        .filter(c => typeof c === 'number') as number[]
+                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const actions = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions);
+                    return actions.map(toCommand);
+                }).reduce((_prev, curr) => curr, [])
         });
     }
 
     private getSourceFile(project: ts.server.Project, fileName: string): ts.SourceFile {
-
         this.connection.console.info('getting source file' + fileName)
         const scriptInfo = project.getScriptInfo(fileName)
         this.connection.console.info('got script info' + scriptInfo.fileName)
@@ -382,28 +346,37 @@ export class Session {
         return sourceFile;
     }
 
-    private getProjectScriptInfoAt(params: TextDocumentPositionParams): ProjectScriptInfoLocation[] {
-        const filePath = uri2path(params.textDocument.uri);        
+    private getProjectScriptInfo(textDocument: TextDocumentIdentifier): ProjectScriptInfo[] {
+        const filePath = uri2path(textDocument.uri);        
         const scriptInfo = this.projectService.getScriptInfoForNormalizedPath(ts.server.toNormalizedPath(filePath));
-        const position = this.getPosition(params.position, scriptInfo);
-
+      
         this.connection.console.log('getting project');
         let project: ts.server.Project;
         try {
             project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false)
-            // const scriptInfo = this.projectService.getScriptInfoEnsuringProjectsUptoDate(filePath)
-            // project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(scriptInfo.path), true);
-            // this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
         } catch (e) {
             this.connection.console.error(e.message + '\n' + e.stack);
             throw e;
         }
-        // const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
-        // const languageService = project.getLanguageService();
-        return [{project, scriptInfo, position}];
-
+        return [{project, scriptInfo}];
     }
 
+    private getProjectScriptInfoAt(params: TextDocumentPositionParams): ProjectScriptInfoLocation[] {
+        return this.getProjectScriptInfo(params.textDocument)
+            .map( ({project, scriptInfo}) => {
+                const position = this.getPosition(params.position, scriptInfo);                
+                return {project, scriptInfo, position};
+            });
+    }
+
+    private getProjectScriptInfoFor(params: TextDocumentRangeParams): ProjectScriptInfoRange[] {
+        return this.getProjectScriptInfo(params.textDocument)
+        .map( ({project, scriptInfo}) => {
+            const start = this.getPosition(params.range.start, scriptInfo);
+            const end = this.getPosition(params.range.end, scriptInfo)               
+            return {project, scriptInfo, start, end};
+        });
+    }
 
     private getPosition(position: Position, scriptInfo: ts.server.ScriptInfo): number {
         return scriptInfo.lineOffsetToPosition(position.line + 1, position.character + 1);
@@ -519,7 +492,6 @@ export class Session {
         }
     }
 
-
     private sendRequestCompletedEvent(_requestId: number): void {
         // const event: protocol.RequestCompletedEvent = {
         // 	seq: 0,
@@ -530,8 +502,6 @@ export class Session {
         // this.send(event);
     }
 
-
-    
     private getDiagnostics(next: NextStep, delay: number, fileNames: string[]): void {
         const checkList = this.createCheckList(fileNames);
         if (checkList.length > 0) {
@@ -543,60 +513,22 @@ export class Session {
         this.errorCheck.startNew(next => this.getDiagnostics(next, 200, Array.from(this.openFiles)));
     }
 
-
-
-
-    /**
-     * Executes the `codeFix` command
-     *
-     * @return Observable of JSON Patches for `null` result
-     */
     private executeCodeFixCommand(fileTextChanges: ts.FileTextChanges[]): void {
-        try {
-            if (fileTextChanges.length === 0) {
-                throw new Error('No changes supplied for code fix command')
-            }
-            // const unixFilePath = fileTextChanges[0].fileName
-            // const firstChangedFile = /^[a-z]:\//i.test(unixFilePath) ?
-            // 	unixFilePath.replace(/\//g, '\\') :
-            // 	unixFilePath
-
-            const changes: {[uri: string]: TextEdit[]} = {}
-            for (const change of fileTextChanges) {
-                const filePath = change.fileName;
-                let project: ts.server.Project;
-                try {
-                    project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false)
-                } catch (e) {
-                    this.connection.console.error(e.message + '\n' + e.stack);
-                    throw e;
-                }
-
-                this.connection.console.info('getting source file' + filePath)
-                const scriptInfo = project.getScriptInfo(filePath)
-                this.connection.console.info('got script info' + scriptInfo.fileName)
-                const sourceFile = project.getSourceFile(scriptInfo.path)
-                if (!sourceFile) {
-                    this.connection.console.info('no source file returned');
-                }
-
-                const uri = path2uri(change.fileName)
-                changes[uri] = change.textChanges.map(({ span, newText }): TextEdit => ({
-                    range: {
-                        start: ts.getLineAndCharacterOfPosition(sourceFile, span.start),
-                        end: ts.getLineAndCharacterOfPosition(sourceFile, span.start + span.length),
-                    },
-                    newText,
-                }))
-            }
-            const edit: WorkspaceEdit = { changes }
-            this.connection.workspace.applyEdit(edit).then(() => this.connection.console.log("aplied edit"))
-
-        } catch (e) {
-            this.connection.console.error(e.message + '\n' + e.stack);
-            throw e;
+        if (fileTextChanges.length === 0) {
+            throw new Error('No changes supplied for code fix command')
         }
 
+        const changes: {[uri: string]: TextEdit[]} = {}
+        for (const change of fileTextChanges) {
+            const filePath = change.fileName;
+            const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false)
+            const sourceFile = this.getSourceFile(project, filePath);
+            const uri = path2uri(change.fileName)
+            changes[uri] = change.textChanges.map(({span, newText}) => toTextEdit(sourceFile, span, newText))
+        }
+        const edit: WorkspaceEdit = { changes }
+        this.connection.workspace.applyEdit(edit)
+            .then(() => this.connection.console.log("aplied edit"))
     }
 
     private setCurrentRequest(requestId: number): void {
