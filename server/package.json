@@ -1,6 +1,6 @@
 {
 	"name": "lsp-tsserver",
-	"bin" : "./build/server.js",
+	"bin": "./build/server.js",
 	"description": "LSP version of tsserver.",
 	"version": "0.0.1",
 	"author": "Tom van Ommeren",
@@ -23,6 +23,7 @@
 		"build": "tsc -p ."
 	},
 	"devDependencies": {
+		"@types/node": "^8.0.50",
 		"tslint": "^5.8.0",
 		"tslint-language-service": "^0.9.6"
 	}
