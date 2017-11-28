@@ -166,7 +166,6 @@ export class Session {
                             newText: c.text,
                         };
                     }
-
                 });
 
                 // BOTH are internal :(
@@ -273,7 +272,10 @@ export class Session {
             return this.getProjectScriptInfoAt(_textDocumentPosition)
                 .map(({project, scriptInfo, position}) => {
                     const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position);
-                    return completions.entries.filter(e => !e.hasAction).map(toCompletionItem);
+                    return completions ?
+                        completions.entries.filter(e => !e.hasAction).map(toCompletionItem) :
+                        [];
+
                 }).reduce((_prev, curr) => curr, []);
         });
 
