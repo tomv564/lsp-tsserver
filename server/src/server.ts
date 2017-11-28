@@ -62,7 +62,6 @@ connection.onDidChangeWatchedFiles((_change) => {
 });
 
 import { LSPLogger } from "./logger";
-const logger = new LSPLogger(connection);
 
 const sys =  ts.sys as ts.server.ServerHost;
 sys.setTimeout = setTimeout;
@@ -105,6 +104,22 @@ if (localeStr) {
 //  || combinePaths(sys.getExecutingFilePath(), "../typesMap.json");
 // const npmLocation = ts.server.findArgument(ts.server.Arguments.NpmLocation);
 
+function getLogLevel(level: string): ts.server.LogLevel {
+    if (level) {
+        const l = level.toLowerCase();
+        if (l === "terse") {
+            return ts.server.LogLevel.terse;
+        } else if (l === "requesttime") {
+            return ts.server.LogLevel.requestTime;
+        } else if (l === "verbose") {
+            return ts.server.LogLevel.verbose;
+        } else if (l === "normal") {
+            return ts.server.LogLevel.normal;
+        }
+    }
+    return ts.server.LogLevel.terse;
+}
+
 function parseStringArray(argName: string): ReadonlyArray<string> {
     const arg = ts.server.findArgument(argName);
     if (arg === undefined) {
@@ -120,6 +135,11 @@ const allowLocalPluginLoads = ts.server.hasArgument("--allowLocalPluginLoads");
 
 const useSingleInferredProject = ts.server.hasArgument("--useSingleInferredProject");
 const useInferredProjectPerProjectRoot = ts.server.hasArgument("--useInferredProjectPerProjectRoot");
+
+// const logFileName = ts.server.findArgument("--logFile");
+const logVerbosity = getLogLevel(ts.server.findArgument("--logVerbosity"));
+const logger = new LSPLogger(connection, logVerbosity);
+
 // const disableAutomaticTypingAcquisition = ts.server.hasArgument("--disableAutomaticTypingAcquisition");
 // const telemetryEnabled = ts.server.hasArgument(ts.server.Arguments.EnableTelemetry);
 
