@@ -247,7 +247,9 @@ export class Session {
             return this.getProjectScriptInfo(_formattingParams.textDocument)
                 .map( ({project, scriptInfo}) => {
                     // _formattingParams.options. // tabSize, insertSpaces
-                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const formatOptions = _formattingParams.options ?
+                        ts.server.convertFormatOptions(_formattingParams.options) :
+                        this.projectService.getFormatCodeOptions(scriptInfo.fileName);
                     const changes = project.getLanguageService().getFormattingEditsForDocument(scriptInfo.fileName, formatOptions);
                     const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
                     return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
@@ -258,11 +260,36 @@ export class Session {
             return this.getProjectScriptInfoFor(_formattingParams)
                 .map( ({project, scriptInfo, start, end}) => {
                     // _formattingParams.options. // tabSize, insertSpaces
-                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const formatOptions = _formattingParams.options ?
+                        ts.server.convertFormatOptions(_formattingParams.options) :
+                        this.projectService.getFormatCodeOptions(scriptInfo.fileName);
                     const changes = project.getLanguageService().getFormattingEditsForRange(scriptInfo.fileName, start, end, formatOptions);
                     const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
                     return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
                 }).reduce((_prev, curr) => curr, []);
+        });
+
+        connection.onDidChangeConfiguration((_configurationParams) => {
+            /**
+             * Information about the host, for example 'Emacs 24.4' or
+             * 'Sublime Text version 3075'
+             */
+            // hostInfo?: string;
+            /**
+             * If present, tab settings apply only to this file.
+             */
+            // file?: string;
+            /**
+             * The format options to use during formatting and other code editing features.
+             */
+            // formatOptions?: FormatCodeSettings;
+            /**
+             * The host's additional supported .js file extensions
+             */
+            // extraFileExtensions?: JsFileExtensionInfo[];
+
+            const configureRequest: ts.server.protocol.ConfigureRequestArguments = _configurationParams.settings;
+            this.projectService.setHostConfiguration(configureRequest);
         });
 
         connection.onRenameRequest((_renameParams: RenameParams): WorkspaceEdit => {

@@ -1,6 +1,6 @@
 import * as ts from "typescript/lib/tsserverlibrary";
 import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, TextDocumentIdentifier, TextEdit } from "vscode-languageserver-protocol";
-import { path2uri } from "./util";
+import {path2uri} from "./util";
 
 /**
  * Maps string-based CompletionEntry::kind to enum-based CompletionItemKind
