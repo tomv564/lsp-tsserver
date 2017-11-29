@@ -1,8 +1,8 @@
 import * as ts from "typescript/lib/tsserverlibrary";
 import {
     CodeActionParams,
-    Command, CompletionItem, ExecuteCommandParams, Hover,
-    IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
+    Command, CompletionItem, DocumentFormattingParams, DocumentRangeFormattingParams,
+    ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
 import { convertTsDiagnostic, TextDocumentRangeParams, toCommand, toCompletionItem, toHover, toLocation, toSignatureHelp, toTextEdit } from "./protocol";
@@ -208,6 +208,8 @@ export class Session {
                     completionProvider: {
                         resolveProvider: false
                     },
+                    documentFormattingProvider: true,
+                    documentRangeFormattingProvider: true,
                     definitionProvider: true,
                     renameProvider: true,
                     hoverProvider: true,
@@ -238,6 +240,28 @@ export class Session {
                     } else {
                         return [];
                     }
+                }).reduce((_prev, curr) => curr, []);
+        });
+
+        connection.onDocumentFormatting((_formattingParams: DocumentFormattingParams): TextEdit[] => {
+            return this.getProjectScriptInfo(_formattingParams.textDocument)
+                .map( ({project, scriptInfo}) => {
+                    // _formattingParams.options. // tabSize, insertSpaces
+                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const changes = project.getLanguageService().getFormattingEditsForDocument(scriptInfo.fileName, formatOptions);
+                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                    return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
+                }).reduce((_prev, curr) => curr, []);
+        });
+
+        connection.onDocumentRangeFormatting((_formattingParams: DocumentRangeFormattingParams): TextEdit[] => {
+            return this.getProjectScriptInfoFor(_formattingParams)
+                .map( ({project, scriptInfo, start, end}) => {
+                    // _formattingParams.options. // tabSize, insertSpaces
+                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const changes = project.getLanguageService().getFormattingEditsForRange(scriptInfo.fileName, start, end, formatOptions);
+                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                    return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
                 }).reduce((_prev, curr) => curr, []);
         });
 
