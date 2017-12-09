@@ -393,9 +393,7 @@ export class Session {
     }
 
     private getSourceFile(project: ts.server.Project, fileName: string): ts.SourceFile {
-        this.connection.console.info("getting source file" + fileName);
         const scriptInfo = project.getScriptInfo(fileName);
-        this.connection.console.info("got script info" + scriptInfo.fileName);
         const sourceFile = project.getSourceFile(scriptInfo.path);
         if (!sourceFile) {
             throw new Error(`Source file ${fileName} not found`);
@@ -408,7 +406,6 @@ export class Session {
         const filePath = uri2path(textDocument.uri);
         const scriptInfo = this.projectService.getScriptInfoForNormalizedPath(ts.server.toNormalizedPath(filePath));
 
-        this.connection.console.log("getting project");
         let project: ts.server.Project;
         try {
             project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);

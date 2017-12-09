@@ -3,7 +3,10 @@ import { IConnection } from "vscode-languageserver";
 
 export class LSPLogger implements ts.server.Logger {
 
-    constructor(private connection: IConnection, private level: ts.server.LogLevel) {}
+    constructor(private connection: IConnection,
+                private readonly traceToConsole: boolean,
+                private level: ts.server.LogLevel) {
+    }
 
     public close(): void {
         // throw new Error("Method not implemented.");
@@ -31,18 +34,19 @@ export class LSPLogger implements ts.server.Logger {
         // throw new Error("Method not implemented.");
     }
     public msg(s: string, _type: ts.server.Msg.Types = ts.server.Msg.Err): void {
-        const line = _type + " " + s;
-        if (_type === ts.server.Msg.Err) {
-            this.connection.console.error(line);
-        } else if (_type === ts.server.Msg.Info) {
-            this.connection.console.info(line);
-        } else if (_type === ts.server.Msg.Perf) {
-            this.connection.console.log(line);
+        if (this.traceToConsole) {
+            const line = _type + " " + s;
+            if (_type === ts.server.Msg.Err) {
+                this.connection.console.error(line);
+            } else if (_type === ts.server.Msg.Info) {
+                this.connection.console.info(line);
+            } else if (_type === ts.server.Msg.Perf) {
+                this.connection.console.log(line);
+            }
         }
     }
     public getLogFileName(): string {
         return "";
-        // throw new Error("Method not implemented.");
     }
 
 }

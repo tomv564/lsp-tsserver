@@ -138,7 +138,11 @@ const useInferredProjectPerProjectRoot = ts.server.hasArgument("--useInferredPro
 
 // const logFileName = ts.server.findArgument("--logFile");
 const logVerbosity = getLogLevel(ts.server.findArgument("--logVerbosity"));
-const logger = new LSPLogger(connection, logVerbosity);
+
+// normally as -traceToConsole in TSS_LOG
+const traceToConsoleValue = ts.server.findArgument("--traceToConsole");
+const traceToConsole = traceToConsoleValue && traceToConsoleValue.toLowerCase() === "true";
+const logger = new LSPLogger(connection, traceToConsole, logVerbosity);
 
 // const disableAutomaticTypingAcquisition = ts.server.hasArgument("--disableAutomaticTypingAcquisition");
 // const telemetryEnabled = ts.server.hasArgument(ts.server.Arguments.EnableTelemetry);
