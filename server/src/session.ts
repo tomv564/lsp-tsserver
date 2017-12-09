@@ -1,8 +1,8 @@
 import * as ts from "typescript/lib/tsserverlibrary";
 import {
     CodeActionParams,
-    Command, CompletionItem, DocumentFormattingParams, DocumentRangeFormattingParams,
-    ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
+    Command, CompletionItem, DocumentFormattingParams, DocumentOnTypeFormattingParams,
+    DocumentRangeFormattingParams, ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
 import { convertTsDiagnostic, TextDocumentRangeParams, toCommand, toCompletionItem, toHover, toLocation, toSignatureHelp, toTextEdit } from "./protocol";
@@ -210,6 +210,10 @@ export class Session {
                     },
                     documentFormattingProvider: true,
                     documentRangeFormattingProvider: true,
+                    documentOnTypeFormattingProvider: {
+                        firstTriggerCharacter: "}",
+                        moreTriggerCharacter: [";", "\n"]
+                    },
                     definitionProvider: true,
                     renameProvider: true,
                     hoverProvider: true,
@@ -247,9 +251,10 @@ export class Session {
             return this.getProjectScriptInfo(_formattingParams.textDocument)
                 .map( ({project, scriptInfo}) => {
                     // _formattingParams.options. // tabSize, insertSpaces
-                    const formatOptions = _formattingParams.options ?
-                        ts.server.convertFormatOptions(_formattingParams.options) :
-                        this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    // const formatOptions = _formattingParams.options ?
+                    //     ts.server.convertFormatOptions(_formattingParams.options) :
+                    //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
                     const changes = project.getLanguageService().getFormattingEditsForDocument(scriptInfo.fileName, formatOptions);
                     const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
                     return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
@@ -260,10 +265,24 @@ export class Session {
             return this.getProjectScriptInfoFor(_formattingParams)
                 .map( ({project, scriptInfo, start, end}) => {
                     // _formattingParams.options. // tabSize, insertSpaces
-                    const formatOptions = _formattingParams.options ?
-                        ts.server.convertFormatOptions(_formattingParams.options) :
-                        this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    // const formatOptions = _formattingParams.options ?
+                    //     ts.server.convertFormatOptions(_formattingParams.options) :
+                    //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
                     const changes = project.getLanguageService().getFormattingEditsForRange(scriptInfo.fileName, start, end, formatOptions);
+                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                    return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
+                }).reduce((_prev, curr) => curr, []);
+        });
+
+        connection.onDocumentOnTypeFormatting((_onTypeFormattingParams: DocumentOnTypeFormattingParams): TextEdit[] => {
+            return this.getProjectScriptInfoAt(_onTypeFormattingParams)
+                .map( ({project, scriptInfo, position}) => {
+                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    // const formatOptions = _formattingParams.options ?
+                    //     ts.server.convertFormatOptions(_formattingParams.options) :
+                    //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                    const changes = project.getLanguageService().getFormattingEditsAfterKeystroke(scriptInfo.fileName, position, _onTypeFormattingParams.ch, formatOptions);
                     const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
                     return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
                 }).reduce((_prev, curr) => curr, []);
@@ -437,6 +456,13 @@ export class Session {
             diagnostics: diags.map(convertTsDiagnostic),
         });
     }
+
+    // private convertFormattingOptions(formattingOptions: FormattingOptions): ts.FormatCodeOptions {
+    //     return {
+    //         TabSize: formatOptions.tabSize,
+    //         ConvertTabsToSpaces: formatOptions.insertSpaces
+    //     };
+    // }
 
     // private semanticCheck(file: ts.server.NormalizedPath, project: ts.server.Project) {
     //     try {
