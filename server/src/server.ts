@@ -6,62 +6,20 @@ import * as ts from "typescript/lib/tsserverlibrary";
 import {
     createConnection, IConnection, StreamMessageReader, StreamMessageWriter,
 } from "vscode-languageserver";
+import { LSPLogger } from "./logger";
 import { createSession, LSPSessionOptions } from "./session";
 
 declare module "typescript/lib/tsserverlibrary" {
     function resolveJavaScriptModule(moduleName: string, initialDir: string, sys: ModuleResolutionHost): string;
 }
 
-// const options: ts.server.ProjectServiceOptions = {
-
-// }
-
 // Create a connection for the server. The connection uses stdin/stdout as a transport
 const connection: IConnection = createConnection(new StreamMessageReader(process.stdin), new StreamMessageWriter(process.stdout));
 
-// // Create a simple text document manager. The text document manager
-// // supports full document sync only
-// let documents: TextDocuments = new TextDocuments();
-// // Make the text document manager listen on the connection
-// // for open, change and close text document events
-// documents.listen(connection);
-
-// The content of a text document has changed. This event is emitted
-// when the text document first opened or when its content has changed.
-// documents.onDidChangeContent((change) => {
-    // validateTextDocument(change.document);
-// });
-
-// The settings interface describe the server relevant settings part
-// interface Settings {
-//  lspSample: ExampleSettings;
-// }
-
-// These are the example settings we defined in the client's package.json
-// file
-// interface ExampleSettings {
-//  maxNumberOfProblems: number;
-// }
-
-// hold the maxNumberOfProblems setting
-// let maxNumberOfProblems: number;
-// The settings have changed. Is send on server activation
-// as well.
-connection.onDidChangeConfiguration((_change) => {
-    connection.console.log("We recevied an config change event");
-
-    // let settings = <Settings>change.settings;
-    // maxNumberOfProblems = settings.lspSample.maxNumberOfProblems || 100;
-    // Revalidate any open text documents
-    // documents.all().forEach(validateTextDocument);
-});
-
 connection.onDidChangeWatchedFiles((_change) => {
     // Monitored files have change in VSCode
-    connection.console.log("We recevied an file change event");
+    connection.console.log("We received an file change event");
 });
-
-import { LSPLogger } from "./logger";
 
 const sys =  ts.sys as ts.server.ServerHost;
 sys.setTimeout = setTimeout;
@@ -81,15 +39,6 @@ sys.require = (initialDir: string, moduleName: string): ts.server.RequireResult 
 };
 
 const cancellationToken = ts.server.nullCancellationToken;
-
-// let eventPort: number;
-// {
-//  const str = ts.server.findArgument("--eventPort");
-//  const v = str && parseInt(str);
-//  if (!isNaN(v)) {
-//      eventPort = v;
-//  }
-// }
 
 const localeStr = ts.server.findArgument("--locale");
 if (localeStr) {
@@ -145,7 +94,6 @@ const traceToConsole = traceToConsoleValue && traceToConsoleValue.toLowerCase() 
 const logger = new LSPLogger(connection, traceToConsole, logVerbosity);
 
 // const disableAutomaticTypingAcquisition = ts.server.hasArgument("--disableAutomaticTypingAcquisition");
-// const telemetryEnabled = ts.server.hasArgument(ts.server.Arguments.EnableTelemetry);
 
 const options: LSPSessionOptions = {
     host: sys,
