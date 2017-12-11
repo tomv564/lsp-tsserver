@@ -161,6 +161,10 @@ export class Session {
                             newText: c.text,
                         };
                     } else {
+                        const length = sourceFile.getEnd();
+                        const newLen = c.text.length;
+                        const changeSummary = `Replacing original (0-${length}) with new (0-${newLen}) to sourceFile ${scriptInfo.path} (${scriptInfo.getLatestVersion()}`;
+                        connection.console.info(changeSummary);
                         return {
                             span: { start: 0, length: sourceFile.getEnd()},
                             newText: c.text,
