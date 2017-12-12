@@ -1,5 +1,5 @@
 import * as ts from "typescript/lib/tsserverlibrary";
-import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, TextDocumentIdentifier, TextEdit } from "vscode-languageserver-protocol";
+import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, TextDocumentIdentifier, TextEdit, SymbolInformation, SymbolKind } from "vscode-languageserver-protocol";
 import {path2uri} from "./util";
 
 /**
@@ -78,6 +78,10 @@ export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
     //  entryName: entry.name,
     // }
     return item;
+}
+
+export function toSymbolInformation(navigationItem: ts.NavigationTree): SymbolInformation {
+    return SymbolInformation.create(navigationItem.text, SymbolKind.Class, Range.create(0, 0, 0, 0))
 }
 
 export function toCommand(action: ts.CodeAction): Command {

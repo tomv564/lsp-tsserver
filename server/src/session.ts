@@ -2,10 +2,10 @@ import * as ts from "typescript/lib/tsserverlibrary";
 import {
     CodeActionParams,
     Command, CompletionItem, DocumentFormattingParams, DocumentOnTypeFormattingParams,
-    DocumentRangeFormattingParams, ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
+    DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { convertTsDiagnostic, TextDocumentRangeParams, toCommand, toCompletionItem, toHover, toLocation, toSignatureHelp, toTextEdit } from "./protocol";
+import { convertTsDiagnostic, TextDocumentRangeParams, toCommand, toCompletionItem, toHover, toLocation, toSignatureHelp, toSymbolInformation, toTextEdit } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -218,6 +218,7 @@ export class Session {
                         firstTriggerCharacter: "}",
                         moreTriggerCharacter: [";", "\n"]
                     },
+                    documentSymbolProvider: true,
                     definitionProvider: true,
                     renameProvider: true,
                     hoverProvider: true,
@@ -289,6 +290,23 @@ export class Session {
                     const changes = project.getLanguageService().getFormattingEditsAfterKeystroke(scriptInfo.fileName, position, _onTypeFormattingParams.ch, formatOptions);
                     const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
                     return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
+                }).reduce((_prev, curr) => curr, []);
+        });
+
+        function* flatten(tree: ts.NavigationTree): IterableIterator<ts.NavigationTree> {
+            yield tree;
+            if (tree.childItems) {
+                for (const childItem of tree.childItems) {
+                    yield* flatten(childItem);
+                }
+            }
+        }
+
+        connection.onDocumentSymbol((_documentSymbolParams: DocumentSymbolParams): SymbolInformation[] => {
+            return this.getProjectScriptInfo(_documentSymbolParams.textDocument)
+                .map(({project, scriptInfo}) => {
+                    const tree = project.getLanguageService().getNavigationTree(scriptInfo.fileName);
+                    return Array.from(flatten(tree), navigationItem => toSymbolInformation(navigationItem));
                 }).reduce((_prev, curr) => curr, []);
         });
 
