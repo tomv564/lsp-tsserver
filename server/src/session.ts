@@ -5,7 +5,7 @@ import {
     DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { convertTsDiagnostic, TextDocumentRangeParams, toCommand, toCompletionItem, toHover, toLocation, toSignatureHelp, toSymbolInformation, toTextEdit } from "./protocol";
+import { convertTsDiagnostic, relevantDocumentSymbols, TextDocumentRangeParams, toCommand, toCompletionItem, toHover, toLocation, toSignatureHelp, toSymbolInformation, toTextEdit } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -306,7 +306,10 @@ export class Session {
             return this.getProjectScriptInfo(_documentSymbolParams.textDocument)
                 .map(({project, scriptInfo}) => {
                     const tree = project.getLanguageService().getNavigationTree(scriptInfo.fileName);
-                    return Array.from(flatten(tree), navigationItem => toSymbolInformation(navigationItem));
+                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                    const relevantTreeItems = Array.from(flatten(tree)).filter(i => relevantDocumentSymbols.includes(i.kind));
+                    return relevantTreeItems.map(item => toSymbolInformation(sourceFile, item, undefined));
+                    // return Array.from(flatten(tree), navigationItem => toSymbolInformation(sourceFile, navigationItem, undefined));
                 }).reduce((_prev, curr) => curr, []);
         });
 

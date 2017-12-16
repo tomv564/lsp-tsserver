@@ -1,5 +1,5 @@
 import * as ts from "typescript/lib/tsserverlibrary";
-import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, TextDocumentIdentifier, TextEdit, SymbolInformation, SymbolKind } from "vscode-languageserver-protocol";
+import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, SymbolInformation, SymbolKind, TextDocumentIdentifier, TextEdit } from "vscode-languageserver-protocol";
 import {path2uri} from "./util";
 
 /**
@@ -24,6 +24,55 @@ export const completionKinds: { [name: string]: CompletionItemKind } = {
     value: CompletionItemKind.Value,
     variable: CompletionItemKind.Variable
 };
+
+// should be global functions and classes + members + ctors
+export const relevantDocumentSymbols: ts.ScriptElementKind[] = [
+    ts.ScriptElementKind.classElement,
+    ts.ScriptElementKind.interfaceElement,
+    ts.ScriptElementKind.functionElement,
+    ts.ScriptElementKind.constElement, // TODO: only if module-level!
+    ts.ScriptElementKind.letElement,
+    ts.ScriptElementKind.memberFunctionElement,
+    // ts.ScriptElementKind.localFunctionElement,
+    ts.ScriptElementKind.memberGetAccessorElement,
+    ts.ScriptElementKind.memberSetAccessorElement,
+    ts.ScriptElementKind.memberVariableElement
+];
+
+function getSymbolKind(scriptElementKind: ts.ScriptElementKind): SymbolKind {
+    switch (scriptElementKind) {
+        case ts.ScriptElementKind.classElement:
+        case ts.ScriptElementKind.localClassElement:
+            return SymbolKind.Class;
+        case ts.ScriptElementKind.moduleElement:
+            return SymbolKind.Module;
+        case ts.ScriptElementKind.interfaceElement:
+            return SymbolKind.Interface;
+        case ts.ScriptElementKind.enumElement:
+            return SymbolKind.Enum;
+        case ts.ScriptElementKind.enumMemberElement:
+            return SymbolKind.Field;
+        case ts.ScriptElementKind.functionElement:
+        case ts.ScriptElementKind.localFunctionElement:
+            return SymbolKind.Function;
+        case ts.ScriptElementKind.variableElement:
+        case ts.ScriptElementKind.localVariableElement:
+        case ts.ScriptElementKind.constElement:
+        case ts.ScriptElementKind.letElement:
+            return SymbolKind.Variable;
+        case ts.ScriptElementKind.constructorImplementationElement:
+            return SymbolKind.Constructor;
+        case ts.ScriptElementKind.memberFunctionElement:
+            return SymbolKind.Method;
+        case ts.ScriptElementKind.memberGetAccessorElement:
+        case ts.ScriptElementKind.memberSetAccessorElement:
+            return SymbolKind.Property;
+        case ts.ScriptElementKind.memberVariableElement:
+            return SymbolKind.Field;
+    }
+
+    return SymbolKind.Variable;
+}
 
 /**
  * Common structural base for range-based text document commands like Code Actions.
@@ -63,9 +112,9 @@ export function convertTsDiagnostic(diagnostic: ts.Diagnostic): Diagnostic {
 export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
     const item: CompletionItem = { label: entry.name };
 
-    const kind = completionKinds[entry.kind];
-    if (kind && typeof(kind) === "number") {
-        item.kind = kind;
+    const completionKind = completionKinds[entry.kind];
+    if (completionKind && typeof(completionKind) === "number") {
+        item.kind = completionKind;
     }
     if (entry.sortText) {
         item.sortText = entry.sortText;
@@ -80,8 +129,11 @@ export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
     return item;
 }
 
-export function toSymbolInformation(navigationItem: ts.NavigationTree): SymbolInformation {
-    return SymbolInformation.create(navigationItem.text, SymbolKind.Class, Range.create(0, 0, 0, 0))
+export function toSymbolInformation(sourceFile: ts.SourceFile, treeItem: ts.NavigationTree, containerName?: string): SymbolInformation {
+    const symbolKind: SymbolKind = getSymbolKind(treeItem.kind);
+    const {range, uri} = toLocation(sourceFile, treeItem.spans[0]);
+
+    return SymbolInformation.create(`${treeItem.text} (${treeItem.kind})`, symbolKind, range, uri, containerName);
 }
 
 export function toCommand(action: ts.CodeAction): Command {
