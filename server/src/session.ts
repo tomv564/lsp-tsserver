@@ -367,9 +367,12 @@ export class Session {
         connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): CompletionItem[] => {
             return this.getProjectScriptInfoAt(_textDocumentPosition)
                 .map(({project, scriptInfo, position}) => {
-                    const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position);
+                    const options: ts.GetCompletionsAtPositionOptions = {
+                        includeExternalModuleExports: false
+                    };
+                    const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position, options);
                     return completions ?
-                        completions.entries.filter(e => !e.hasAction).map(toCompletionItem) :
+                        completions.entries.map(toCompletionItem) :
                         [];
 
                 }).reduce((_prev, curr) => curr, []);
