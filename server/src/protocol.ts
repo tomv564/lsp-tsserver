@@ -1,5 +1,5 @@
 import * as ts from "typescript/lib/tsserverlibrary";
-import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, SymbolInformation, SymbolKind, TextDocumentIdentifier, TextEdit } from "vscode-languageserver-protocol";
+import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentHighlight, DocumentHighlightKind, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, SymbolInformation, SymbolKind, TextDocumentIdentifier, TextEdit } from "vscode-languageserver-protocol";
 import {path2uri} from "./util";
 
 /**
@@ -109,6 +109,24 @@ export function convertTsDiagnostic(diagnostic: ts.Diagnostic): Diagnostic {
     };
 }
 
+function getHighlightKind(tsKind: ts.HighlightSpanKind): DocumentHighlightKind {
+    switch (tsKind) {
+        case ts.HighlightSpanKind.reference:
+            return DocumentHighlightKind.Read;
+        case ts.HighlightSpanKind.writtenReference:
+            return DocumentHighlightKind.Write;
+        default:
+            return DocumentHighlightKind.Text;
+    }
+}
+
+export function toDocumentHighlight(sourceFile: ts.SourceFile, span: ts.HighlightSpan): DocumentHighlight {
+    return {
+        range: toRange(sourceFile, span.textSpan),
+        kind: getHighlightKind(span.kind)
+    };
+}
+
 export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
     const item: CompletionItem = { label: entry.name };
 
@@ -142,6 +160,12 @@ export function toCommand(action: ts.CodeAction): Command {
         command: "codeFix",
         arguments: action.changes,
     };
+}
+
+function toRange(sourceFile: ts.SourceFile, span: ts.TextSpan) {
+    const start = ts.getLineAndCharacterOfPosition(sourceFile, span.start);
+    const end = ts.getLineAndCharacterOfPosition(sourceFile, span.start + span.length);
+    return {start, end};
 }
 
 export function toLocation(sourceFile: ts.SourceFile, span: ts.TextSpan): Location {

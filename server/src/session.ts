@@ -1,11 +1,11 @@
 import * as ts from "typescript/lib/tsserverlibrary";
 import {
     CodeActionParams,
-    Command, CompletionItem, DocumentFormattingParams, DocumentOnTypeFormattingParams,
-    DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
+    Command, CompletionItem, DocumentFormattingParams, DocumentHighlight,
+    DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { convertTsDiagnostic, relevantDocumentSymbols, TextDocumentRangeParams, toCommand, toCompletionItem, toHover, toLocation, toSignatureHelp, toSymbolInformation, toTextEdit } from "./protocol";
+import { convertTsDiagnostic, relevantDocumentSymbols, TextDocumentRangeParams, toCommand, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toSymbolInformation, toTextEdit } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -219,6 +219,7 @@ export class Session {
                         moreTriggerCharacter: [";", "\n"]
                     },
                     documentSymbolProvider: true,
+                    documentHighlightProvider: true,
                     definitionProvider: true,
                     renameProvider: true,
                     hoverProvider: true,
@@ -381,6 +382,21 @@ export class Session {
                     return definitions.map(d => {
                         return toLocation(this.getSourceFile(project, d.fileName), d.textSpan);
                     });
+                }).reduce((_prev, curr) => curr, []);
+        });
+
+        connection.onDocumentHighlight((_textDocumentPosition: TextDocumentPositionParams): DocumentHighlight[] => {
+            return this.getProjectScriptInfoAt(_textDocumentPosition)
+                .map(({project, scriptInfo, position}) => {
+                    const highlights = project.getLanguageService().getDocumentHighlights(scriptInfo.fileName, position, []);
+                    if (highlights) {
+                        const fileHighlights = highlights.find(hl => hl.fileName === scriptInfo.fileName);
+                        if (fileHighlights) {
+                            const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                            return fileHighlights.highlightSpans.map( hs => toDocumentHighlight(sourceFile, hs));
+                        }
+                    }
+                    return [];
                 }).reduce((_prev, curr) => curr, []);
         });
 
