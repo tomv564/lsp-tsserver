@@ -55,6 +55,10 @@ interface ProjectServiceWithInternals extends ts.server.ProjectService {
 
 type ITypingsInstaller = any;
 
+interface FlattenedNavigationTree extends ts.NavigationTree {
+    containerName: string;
+}
+
 export class Session {
     private readonly gcTimer: ts.server.GcTimer;
     // tslint:disable-next-line:member-ordering
@@ -175,7 +179,11 @@ export class Session {
                 // BOTH are internal :(
                 // this.projectService.applyChangesInOpenFiles()
                 this.changeSeq++;
-                this.projectService.applyChangesToFile(scriptInfo, changes);
+                try {
+                    this.projectService.applyChangesToFile(scriptInfo, changes);
+                } catch (e) {
+                    connection.console.error(`Failed to apply file changes because: ${e.message}`);
+                }
                 this.requestDiagnostics();
             } catch (e) {
                 connection.console.error(e.message + "\n" + e.stack);
@@ -294,11 +302,25 @@ export class Session {
                 }).reduce((_prev, curr) => curr, []);
         });
 
-        function* flatten(tree: ts.NavigationTree): IterableIterator<ts.NavigationTree> {
-            yield tree;
+        function isNameableContainer(tree: ts.NavigationTree): boolean {
+            switch (tree.kind) {
+                case ts.ScriptElementKind.classElement:
+                case ts.ScriptElementKind.interfaceElement:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        function* flatten(tree: ts.NavigationTree, containerName?: string): IterableIterator<FlattenedNavigationTree> {
+            yield {containerName, ...tree};
             if (tree.childItems) {
+                let nextContainerName = containerName;
+                if (isNameableContainer(tree)) {
+                    nextContainerName = containerName ? containerName + "." + tree.text : tree.text;
+                }
                 for (const childItem of tree.childItems) {
-                    yield* flatten(childItem);
+                    yield* flatten(childItem, nextContainerName);
                 }
             }
         }
@@ -309,7 +331,7 @@ export class Session {
                     const tree = project.getLanguageService().getNavigationTree(scriptInfo.fileName);
                     const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
                     const relevantTreeItems = Array.from(flatten(tree)).filter(i => relevantDocumentSymbols.includes(i.kind));
-                    return relevantTreeItems.map(item => toSymbolInformation(sourceFile, item, undefined));
+                    return relevantTreeItems.map(item => toSymbolInformation(sourceFile, item, item.containerName));
                     // return Array.from(flatten(tree), navigationItem => toSymbolInformation(sourceFile, navigationItem, undefined));
                 }).reduce((_prev, curr) => curr, []);
         });

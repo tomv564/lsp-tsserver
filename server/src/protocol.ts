@@ -30,8 +30,8 @@ export const relevantDocumentSymbols: ts.ScriptElementKind[] = [
     ts.ScriptElementKind.classElement,
     ts.ScriptElementKind.interfaceElement,
     ts.ScriptElementKind.functionElement,
-    ts.ScriptElementKind.constElement, // TODO: only if module-level!
-    ts.ScriptElementKind.letElement,
+    // ts.ScriptElementKind.constElement, // TODO: only if module-level!
+    // ts.ScriptElementKind.letElement,
     ts.ScriptElementKind.memberFunctionElement,
     // ts.ScriptElementKind.localFunctionElement,
     ts.ScriptElementKind.memberGetAccessorElement,
