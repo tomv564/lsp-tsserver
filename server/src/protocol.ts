@@ -94,11 +94,13 @@ export interface TextDocumentRangeParams {
 export function convertTsDiagnostic(diagnostic: ts.Diagnostic): Diagnostic {
     const text = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
     let range: Range = { start: {character: 0, line: 0}, end: {character: 0, line: 0} };
-    if (diagnostic.file && diagnostic.start && diagnostic.length) {
-        range = {
-            start: diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start),
-            end: diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start + diagnostic.length),
-        };
+    if (diagnostic.file) {
+        if (diagnostic.start != null && diagnostic.length != null) {
+            range = {
+                start: diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start),
+                end: diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start + diagnostic.length),
+            };
+        }
     }
     return {
         range,
