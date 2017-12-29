@@ -5,7 +5,7 @@ import {
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams, DocumentHighlight, DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeParams, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit, WorkspaceSymbolParams,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { actionToCommand, convertTsDiagnostic, itemToSymbolInformation, RefactorCommand, refactorToCommands, relevantDocumentSymbols, TextDocumentRangeParams, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
+import { actionToCommand, CommandNames, convertTsDiagnostic, itemToSymbolInformation, RefactorCommand, refactorToCommands, relevantDocumentSymbols, TextDocumentRangeParams, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -480,12 +480,12 @@ export class Session {
 
     public executeCommand(params: ExecuteCommandParams): any {
         switch (params.command) {
-            case "codeFix":
+            case CommandNames.CodeFix:
                 if (!params.arguments || params.arguments.length < 1) {
                     throw new Error(`Command ${params.command} requires arguments`);
                 }
                 return this.executeCodeFixCommand(params.arguments);
-            case "refactor":
+            case CommandNames.Refactor:
                 if (!params.arguments || params.arguments.length < 1) {
                     throw new Error(`Command ${params.command} requires arguments`);
                 }

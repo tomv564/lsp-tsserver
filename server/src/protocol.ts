@@ -25,6 +25,11 @@ export const completionKinds: { [name: string]: CompletionItemKind } = {
     variable: CompletionItemKind.Variable
 };
 
+export enum CommandNames {
+    CodeFix = "codeFix",
+    Refactor = "refactor"
+}
+
 // should be global functions and classes + members + ctors
 export const relevantDocumentSymbols: ts.ScriptElementKind[] = [
     ts.ScriptElementKind.classElement,
@@ -166,7 +171,7 @@ export function treeToSymbolInformation(sourceFile: ts.SourceFile, treeItem: ts.
 export function actionToCommand(action: ts.CodeAction): Command {
     return {
         title: action.description,
-        command: "codeFix",
+        command: CommandNames.CodeFix,
         arguments: action.changes,
     };
 }
@@ -190,7 +195,7 @@ export function refactorToCommands(refactor: ts.ApplicableRefactorInfo, fileName
 
         return {
             title: action.description,
-            command: "refactor",
+            command: CommandNames.Refactor,
             arguments: [args]
         };
     });
