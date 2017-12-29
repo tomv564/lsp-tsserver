@@ -1,11 +1,11 @@
 import * as ts from "typescript/lib/tsserverlibrary";
 import {
     CodeActionParams,
-    Command, CompletionItem, DocumentFormattingParams, DocumentHighlight,
-    DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit,
+    Command, CompletionItem, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams, DocumentHighlight, DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeParams, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit, WorkspaceSymbolParams,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { convertTsDiagnostic, relevantDocumentSymbols, TextDocumentRangeParams, toCommand, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toSymbolInformation, toTextEdit } from "./protocol";
+import { convertTsDiagnostic, itemToSymbolInformation, relevantDocumentSymbols, TextDocumentRangeParams, toCommand, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -59,6 +59,29 @@ interface FlattenedNavigationTree extends ts.NavigationTree {
     containerName: string;
 }
 
+function isNameableContainer(tree: ts.NavigationTree): boolean {
+    switch (tree.kind) {
+        case ts.ScriptElementKind.classElement:
+        case ts.ScriptElementKind.interfaceElement:
+            return true;
+        default:
+            return false;
+    }
+}
+
+function* flatten(tree: ts.NavigationTree, containerName?: string): IterableIterator<FlattenedNavigationTree> {
+    yield {containerName, ...tree};
+    if (tree.childItems) {
+        let nextContainerName = containerName;
+        if (isNameableContainer(tree)) {
+            nextContainerName = containerName ? containerName + "." + tree.text : tree.text;
+        }
+        for (const childItem of tree.childItems) {
+            yield* flatten(childItem, nextContainerName);
+        }
+    }
+}
+
 export class Session {
     private readonly gcTimer: ts.server.GcTimer;
     // tslint:disable-next-line:member-ordering
@@ -83,7 +106,7 @@ export class Session {
     private openFiles = new Set<string>();
     private connection: IConnection;
 
-    constructor(connection: IConnection, opts: LSPSessionOptions) {
+    constructor(connection: IConnection | undefined, opts: LSPSessionOptions) {
         this.connection = connection;
         // this.host = opts.host;
         this.cancellationToken = opts.cancellationToken;
@@ -125,337 +148,383 @@ export class Session {
 
         this.gcTimer = new ts.server.GcTimer(opts.host, /*delay*/ 7000, this.logger);
 
-        connection.onDidOpenTextDocument((params) => {
-            try {
-                const fileName = uri2path(params.textDocument.uri);
-                connection.console.log(`${fileName} opened.`);
-                try {
-                    this.projectService.openClientFile(fileName, params.textDocument.text);
-                } catch (e) {
-                    connection.console.error(e.message + "\n" + e.stack);
-                    throw e;
-                }
-                this.openFiles.add(fileName);
-                this.requestDiagnostics();
-            } catch (e) {
-                connection.console.error(e.message + "\n" + e.stack);
-                throw e;
-            }
-        });
-        connection.onDidChangeTextDocument((params) => {
-            try {
-                const filePath = uri2path(params.textDocument.uri);
-                const scriptInfo = this.projectService.getScriptInfo(filePath);
-                if (!scriptInfo) {
-                    connection.console.error("No scriptInfo for file" + params.textDocument.uri);
-                }
-                const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(scriptInfo.path), false);
-
-                const sourceFile = project.getSourceFile(scriptInfo.path);
-                if (!sourceFile) {
-                    connection.console.info("no source file returned");
-                }
-
-                const changes: ts.TextChange[] = params.contentChanges.map(c => {
-                    if (c.range) {
-                        const start = this.getPosition(c.range.start, scriptInfo);
-                        const end = this.getPosition(c.range.end, scriptInfo);
-                        return {
-                            span: { start, length: end - start },
-                            newText: c.text,
-                        };
-                    } else {
-                        const length = sourceFile.getEnd();
-                        const newLen = c.text.length;
-                        const changeSummary = `Replacing original (0-${length}) with new (0-${newLen}) to sourceFile ${scriptInfo.path} (${scriptInfo.getLatestVersion()}`;
-                        connection.console.info(changeSummary);
-                        return {
-                            span: { start: 0, length: sourceFile.getEnd()},
-                            newText: c.text,
-                        };
-                    }
-                });
-
-                // BOTH are internal :(
-                // this.projectService.applyChangesInOpenFiles()
-                this.changeSeq++;
-                try {
-                    this.projectService.applyChangesToFile(scriptInfo, changes);
-                } catch (e) {
-                    connection.console.error(`Failed to apply file changes because: ${e.message}`);
-                }
-                this.requestDiagnostics();
-            } catch (e) {
-                connection.console.error(e.message + "\n" + e.stack);
-                throw e;
-            }
-
-        });
-        connection.onDidCloseTextDocument((params) => {
-            const fileName = uri2path(params.textDocument.uri);
-            try {
-                this.projectService.closeClientFile(fileName);
-            } catch (e) {
-                connection.console.error(e.message + "\n" + e.stack);
-                throw e;
-            }
-            this.openFiles.delete(fileName);
-            this.requestDiagnostics();
-        });
+        // testing hack.
+        if (!connection.onInitialize) {
+            return;
+        }
 
         // After the server has started the client sends an initilize request. The server receives
         // in the passed params the rootPath of the workspace plus the client capabilites.
         // let workspaceRoot: string;
-        connection.onInitialize((_params): InitializeResult => {
-            // workspaceRoot = params.rootPath;
-            return {
-                capabilities: {
-                    // Tell the client that the server works in FULL text document sync mode
-                    textDocumentSync: TextDocumentSyncKind.Full,
-                    // Tell the client that the server support code complete
-                    codeActionProvider: true,
-                    executeCommandProvider: {
-                        commands: []
-                    },
-                    completionProvider: {
-                        resolveProvider: false
-                    },
-                    documentFormattingProvider: true,
-                    documentRangeFormattingProvider: true,
-                    documentOnTypeFormattingProvider: {
-                        firstTriggerCharacter: "}",
-                        moreTriggerCharacter: [";", "\n"]
-                    },
-                    documentSymbolProvider: true,
-                    documentHighlightProvider: true,
-                    definitionProvider: true,
-                    renameProvider: true,
-                    hoverProvider: true,
-                    referencesProvider: true,
-                    signatureHelpProvider: {
-                        triggerCharacters: ["(", ","],
-                    }
+        connection.onInitialize((params) => this.initialize(params));
+        connection.onDidChangeConfiguration((params) => this.didChangeConfiguration(params));
+
+        connection.onDidOpenTextDocument((params) => this.didOpenTextDocument(params));
+        connection.onDidChangeTextDocument((params) => this.didChangeTextDocument(params));
+        connection.onDidCloseTextDocument((params) => this.didCloseTextDocument(params));
+
+        connection.onDocumentFormatting((params) => this.documentFormatting(params));
+        connection.onDocumentRangeFormatting((params) => this.documentRangeFormatting(params));
+        connection.onDocumentOnTypeFormatting((params) => this.documentOnTypeFormatting(params));
+
+        connection.onHover((params) => this.hover(params));
+        connection.onReferences((params) => this.references(params));
+        connection.onDocumentSymbol((params) => this.documentSymbol(params));
+
+        connection.onRenameRequest((params) => this.renameRequest(params));
+        connection.onCompletion((params) => this.completion(params));
+        connection.onDefinition((params) => this.definition(params));
+        connection.onDocumentHighlight((params) => this.documentHighlight(params));
+        connection.onSignatureHelp((params) => this.signatureHelp(params));
+
+        connection.onExecuteCommand((params) => this.executeCommand(params));
+
+        connection.onCodeAction((params) => this.codeAction(params));
+        connection.onWorkspaceSymbol((params) => this.workspaceSymbols(params));
+
+        // connection.onWorkspaceSymbol((_workspaceSymbolParams: WorkspaceSymbolParams): SymbolInformation[] => {
+        //     this.projectService.inferredProjects.values()
+        //     return [];
+        // });
+
+    }
+
+    public initialize(_params: InitializeParams): InitializeResult {
+        // workspaceRoot = params.rootPath;
+        return {
+            capabilities: {
+                // Tell the client that the server works in FULL text document sync mode
+                textDocumentSync: TextDocumentSyncKind.Full,
+                // Tell the client that the server support code complete
+                codeActionProvider: true,
+                executeCommandProvider: {
+                    commands: []
                 },
-            };
-        });
-
-        connection.onHover((_textDocumentPosition: TextDocumentPositionParams): Hover => {
-            return this.getProjectScriptInfoAt(_textDocumentPosition)
-                .map(({project, scriptInfo, position}) => {
-                    const info = project.getLanguageService().getQuickInfoAtPosition(scriptInfo.fileName, position);
-                    return toHover(info);
-                }).reduce((_prev, curr) => curr, { contents: [] });
-        });
-
-        connection.onReferences((_referenceParams: ReferenceParams): Location[] => {
-            return this.getProjectScriptInfoAt(_referenceParams)
-                .map(({project, scriptInfo, position}) => {
-                    const referencedSymbols = project.getLanguageService().findReferences(scriptInfo.fileName, position);
-                    if (referencedSymbols.length) {
-                        return referencedSymbols[0].references.map(r => {
-                            return toLocation(this.getSourceFile(project, r.fileName), r.textSpan);
-                        });
-                    } else {
-                        return [];
-                    }
-                }).reduce((_prev, curr) => curr, []);
-        });
-
-        connection.onDocumentFormatting((_formattingParams: DocumentFormattingParams): TextEdit[] => {
-            return this.getProjectScriptInfo(_formattingParams.textDocument)
-                .map( ({project, scriptInfo}) => {
-                    // _formattingParams.options. // tabSize, insertSpaces
-                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                    // const formatOptions = _formattingParams.options ?
-                    //     ts.server.convertFormatOptions(_formattingParams.options) :
-                    //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                    const changes = project.getLanguageService().getFormattingEditsForDocument(scriptInfo.fileName, formatOptions);
-                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
-                    return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
-                }).reduce((_prev, curr) => curr, []);
-        });
-
-        connection.onDocumentRangeFormatting((_formattingParams: DocumentRangeFormattingParams): TextEdit[] => {
-            return this.getProjectScriptInfoFor(_formattingParams)
-                .map( ({project, scriptInfo, start, end}) => {
-                    // _formattingParams.options. // tabSize, insertSpaces
-                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                    // const formatOptions = _formattingParams.options ?
-                    //     ts.server.convertFormatOptions(_formattingParams.options) :
-                    //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                    const changes = project.getLanguageService().getFormattingEditsForRange(scriptInfo.fileName, start, end, formatOptions);
-                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
-                    return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
-                }).reduce((_prev, curr) => curr, []);
-        });
-
-        connection.onDocumentOnTypeFormatting((_onTypeFormattingParams: DocumentOnTypeFormattingParams): TextEdit[] => {
-            return this.getProjectScriptInfoAt(_onTypeFormattingParams)
-                .map( ({project, scriptInfo, position}) => {
-                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                    // const formatOptions = _formattingParams.options ?
-                    //     ts.server.convertFormatOptions(_formattingParams.options) :
-                    //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                    const changes = project.getLanguageService().getFormattingEditsAfterKeystroke(scriptInfo.fileName, position, _onTypeFormattingParams.ch, formatOptions);
-                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
-                    return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
-                }).reduce((_prev, curr) => curr, []);
-        });
-
-        function isNameableContainer(tree: ts.NavigationTree): boolean {
-            switch (tree.kind) {
-                case ts.ScriptElementKind.classElement:
-                case ts.ScriptElementKind.interfaceElement:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        function* flatten(tree: ts.NavigationTree, containerName?: string): IterableIterator<FlattenedNavigationTree> {
-            yield {containerName, ...tree};
-            if (tree.childItems) {
-                let nextContainerName = containerName;
-                if (isNameableContainer(tree)) {
-                    nextContainerName = containerName ? containerName + "." + tree.text : tree.text;
+                completionProvider: {
+                    resolveProvider: false
+                },
+                documentFormattingProvider: true,
+                documentRangeFormattingProvider: true,
+                documentOnTypeFormattingProvider: {
+                    firstTriggerCharacter: "}",
+                    moreTriggerCharacter: [";", "\n"]
+                },
+                workspaceSymbolProvider: true,
+                documentSymbolProvider: true,
+                documentHighlightProvider: true,
+                definitionProvider: true,
+                renameProvider: true,
+                hoverProvider: true,
+                referencesProvider: true,
+                signatureHelpProvider: {
+                    triggerCharacters: ["(", ","],
                 }
-                for (const childItem of tree.childItems) {
-                    yield* flatten(childItem, nextContainerName);
-                }
+            },
+        };
+    }
+
+    public didOpenTextDocument(params: DidOpenTextDocumentParams): void {
+        try {
+            const fileName = uri2path(params.textDocument.uri);
+            this.logger.info(`${fileName} opened.`);
+            try {
+                this.projectService.openClientFile(fileName, params.textDocument.text);
+            } catch (e) {
+                this.logger.msg(e.message + "\n" + e.stack, ts.server.Msg.Err);
+                throw e;
             }
+            this.openFiles.add(fileName);
+            this.requestDiagnostics();
+        } catch (e) {
+            this.logger.msg(e.message + "\n" + e.stack, ts.server.Msg.Err);
+            throw e;
         }
+    }
 
-        connection.onDocumentSymbol((_documentSymbolParams: DocumentSymbolParams): SymbolInformation[] => {
-            return this.getProjectScriptInfo(_documentSymbolParams.textDocument)
-                .map(({project, scriptInfo}) => {
-                    const tree = project.getLanguageService().getNavigationTree(scriptInfo.fileName);
-                    const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
-                    const relevantTreeItems = Array.from(flatten(tree)).filter(i => relevantDocumentSymbols.includes(i.kind));
-                    return relevantTreeItems.map(item => toSymbolInformation(sourceFile, item, item.containerName));
-                    // return Array.from(flatten(tree), navigationItem => toSymbolInformation(sourceFile, navigationItem, undefined));
-                }).reduce((_prev, curr) => curr, []);
-        });
+    public didChangeTextDocument(params: DidChangeTextDocumentParams): void {
+        try {
+            const filePath = uri2path(params.textDocument.uri);
+            const scriptInfo = this.projectService.getScriptInfo(filePath);
+            if (!scriptInfo) {
+                this.logger.msg("No scriptInfo for file" + params.textDocument.uri, ts.server.Msg.Err);
+            }
+            const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(scriptInfo.path), false);
 
-        connection.onDidChangeConfiguration((_configurationParams) => {
-            /**
-             * Information about the host, for example 'Emacs 24.4' or
-             * 'Sublime Text version 3075'
-             */
-            // hostInfo?: string;
-            /**
-             * If present, tab settings apply only to this file.
-             */
-            // file?: string;
-            /**
-             * The format options to use during formatting and other code editing features.
-             */
-            // formatOptions?: FormatCodeSettings;
-            /**
-             * The host's additional supported .js file extensions
-             */
-            // extraFileExtensions?: JsFileExtensionInfo[];
+            const sourceFile = project.getSourceFile(scriptInfo.path);
+            if (!sourceFile) {
+                this.logger.info("no source file returned");
+            }
 
-            const configureRequest: ts.server.protocol.ConfigureRequestArguments = _configurationParams.settings;
-            this.projectService.setHostConfiguration(configureRequest);
-        });
-
-        connection.onRenameRequest((_renameParams: RenameParams): WorkspaceEdit => {
-            return this.getProjectScriptInfoAt(_renameParams)
-                .map(({project, scriptInfo, position}) => {
-                    const renameInfo = project.getLanguageService().getRenameInfo(scriptInfo.fileName, position);
-                    if (!renameInfo.canRename) {
-                        throw new Error("This symbol cannot be renamed");
-                    }
-                    const changes: {[uri: string]: TextEdit[]} = {};
-
-                    project.getLanguageService().findRenameLocations(scriptInfo.fileName, position, false, true)
-                        .forEach((location: ts.RenameLocation) => {
-                            const edit = toTextEdit(this.getSourceFile(project, location.fileName), location.textSpan, _renameParams.newName);
-                            const editUri = path2uri(location.fileName);
-                            if (changes[editUri]) {
-                                changes[editUri].push(edit);
-                            } else {
-                                changes[editUri] = [edit];
-                            }
-                        });
-
+            const changes: ts.TextChange[] = params.contentChanges.map(c => {
+                if (c.range) {
+                    const start = this.getPosition(c.range.start, scriptInfo);
+                    const end = this.getPosition(c.range.end, scriptInfo);
                     return {
-                        changes,
+                        span: { start, length: end - start },
+                        newText: c.text,
                     };
-                }).reduce((_prev, curr) => curr, { changes: {}});
-        });
+                } else {
+                    // this is the LSP case - no range sent.
+                    const newLen = c.text.length;
+                    const prevLen = sourceFile.getEnd();
+                    const snapshot = scriptInfo.getSnapshot();
+                    const ssLen = snapshot.getLength();
+                    // const script
+                    this.logger.info(`didChange lengths newLen ${newLen} prev sourceFile ${prevLen} pref snapshot ${ssLen}`);
+                    // const changeSummary = `Replacing original (0-${length}) with new (0-${newLen}) to sourceFile ${scriptInfo.path} (${scriptInfo.getLatestVersion()}`;
 
-        // This handler provides the initial list of the completion items.
-        connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): CompletionItem[] => {
-            return this.getProjectScriptInfoAt(_textDocumentPosition)
-                .map(({project, scriptInfo, position}) => {
-                    const options: ts.GetCompletionsAtPositionOptions = {
-                        includeExternalModuleExports: false
+                    // this.logger.info(changeSummary);
+                    return {
+                        span: { start: 0, length: ssLen},
+                        newText: c.text,
                     };
-                    const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position, options);
-                    return completions ?
-                        completions.entries.map(toCompletionItem) :
-                        [];
+                }
+            });
 
-                }).reduce((_prev, curr) => curr, []);
-        });
+            // BOTH are internal :(
+            // this.projectService.applyChangesInOpenFiles()
+            this.changeSeq++;
+            try {
+                this.projectService.applyChangesToFile(scriptInfo, changes);
+                this.requestDiagnostics();
+            } catch (e) {
+                this.logger.msg(e.message + "\n" + e.stack, ts.server.Msg.Err);
 
-        connection.onDefinition((_textDocumentPosition: TextDocumentPositionParams): Location | Location[] => {
-            return this.getProjectScriptInfoAt(_textDocumentPosition)
-                .map(({project, scriptInfo, position}) => {
-                    const definitions = project.getLanguageService().getDefinitionAtPosition(scriptInfo.fileName, position);
+            }
+        } catch (e) {
+            this.logger.msg(e.message + "\n" + e.stack, ts.server.Msg.Err);
+            throw e;
+        }
+    }
+
+    public didCloseTextDocument(params: DidCloseTextDocumentParams): void {
+        const fileName = uri2path(params.textDocument.uri);
+        try {
+            this.projectService.closeClientFile(fileName);
+        } catch (e) {
+            this.logger.msg(e.message + "\n" + e.stack, ts.server.Msg.Err);
+            throw e;
+        }
+        this.openFiles.delete(fileName);
+        this.requestDiagnostics();
+    }
+
+    public hover(textDocumentPosition: TextDocumentPositionParams): Hover {
+        return this.getProjectScriptInfoAt(textDocumentPosition)
+            .map(({project, scriptInfo, position}) => {
+                const info = project.getLanguageService().getQuickInfoAtPosition(scriptInfo.fileName, position);
+                return info ? toHover(info) : null;
+            }).reduce((_prev, curr) => curr, { contents: [] });
+    }
+
+    public references(referenceParams: ReferenceParams): Location[] {
+        return this.getProjectScriptInfoAt(referenceParams)
+            .map(({project, scriptInfo, position}) => {
+                const entries = project.getLanguageService().getReferencesAtPosition(scriptInfo.fileName, position);
+                const service = project.getLanguageService();
+                const sourceFiles = service.getProgram().getSourceFiles();
+                const names = sourceFiles.map(f => f.fileName).join(", ");
+                this.logger.info(`Files is ${names}`);
+
+                return entries.map(e => toLocation(this.getSourceFile(project, e.fileName), e.textSpan));
+                // if (referencedSymbols.length) {
+                //     return referencedSymbols[0].references.map(r => {
+                //     });
+                // } else {
+                //     return [];
+                // }
+            }).reduce((_prev, curr) => curr, []);
+    }
+
+    public documentFormatting(formattingParams: DocumentFormattingParams): TextEdit[] {
+        return this.getProjectScriptInfo(formattingParams.textDocument)
+            .map( ({project, scriptInfo}) => {
+                // _formattingParams.options. // tabSize, insertSpaces
+                const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                // const formatOptions = _formattingParams.options ?
+                //     ts.server.convertFormatOptions(_formattingParams.options) :
+                //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                const changes = project.getLanguageService().getFormattingEditsForDocument(scriptInfo.fileName, formatOptions);
+                const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
+            }).reduce((_prev, curr) => curr, []);
+    }
+
+    public documentRangeFormatting(formattingParams: DocumentRangeFormattingParams): TextEdit[] {
+        return this.getProjectScriptInfoFor(formattingParams)
+            .map( ({project, scriptInfo, start, end}) => {
+                // _formattingParams.options. // tabSize, insertSpaces
+                const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                // const formatOptions = _formattingParams.options ?
+                //     ts.server.convertFormatOptions(_formattingParams.options) :
+                //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                const changes = project.getLanguageService().getFormattingEditsForRange(scriptInfo.fileName, start, end, formatOptions);
+                const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
+            }).reduce((_prev, curr) => curr, []);
+    }
+
+    public documentOnTypeFormatting(onTypeFormattingParams: DocumentOnTypeFormattingParams): TextEdit[] {
+        return this.getProjectScriptInfoAt(onTypeFormattingParams)
+            .map( ({project, scriptInfo, position}) => {
+                const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                // const formatOptions = _formattingParams.options ?
+                //     ts.server.convertFormatOptions(_formattingParams.options) :
+                //     this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                const changes = project.getLanguageService().getFormattingEditsAfterKeystroke(scriptInfo.fileName, position, onTypeFormattingParams.ch, formatOptions);
+                const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                return changes.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
+            }).reduce((_prev, curr) => curr, []);
+    }
+
+    public documentSymbol(documentSymbolParams: DocumentSymbolParams): SymbolInformation[] {
+        return this.getProjectScriptInfo(documentSymbolParams.textDocument)
+            .map(({project, scriptInfo}) => {
+                const tree = project.getLanguageService().getNavigationTree(scriptInfo.fileName);
+                const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                const relevantTreeItems = Array.from(flatten(tree)).filter(i => relevantDocumentSymbols.includes(i.kind));
+                return relevantTreeItems.map(item => treeToSymbolInformation(sourceFile, item, item.containerName));
+                // return Array.from(flatten(tree), navigationItem => toSymbolInformation(sourceFile, navigationItem, undefined));
+            }).reduce((_prev, curr) => curr, []);
+    }
+
+    public didChangeConfiguration(configurationParams: DidChangeConfigurationParams) {
+        /**
+         * Information about the host, for example 'Emacs 24.4' or
+         * 'Sublime Text version 3075'
+         */
+        // hostInfo?: string;
+        /**
+         * If present, tab settings apply only to this file.
+         */
+        // file?: string;
+        /**
+         * The format options to use during formatting and other code editing features.
+         */
+        // formatOptions?: FormatCodeSettings;
+        /**
+         * The host's additional supported .js file extensions
+         */
+        // extraFileExtensions?: JsFileExtensionInfo[];
+
+        const configureRequest: ts.server.protocol.ConfigureRequestArguments = configurationParams.settings;
+        this.projectService.setHostConfiguration(configureRequest);
+    }
+
+    public renameRequest(renameParams: RenameParams): WorkspaceEdit {
+        return this.getProjectScriptInfoAt(renameParams)
+            .map(({project, scriptInfo, position}) => {
+                const renameInfo = project.getLanguageService().getRenameInfo(scriptInfo.fileName, position);
+                if (!renameInfo.canRename) {
+                    throw new Error("This symbol cannot be renamed");
+                }
+                const changes: {[uri: string]: TextEdit[]} = {};
+
+                project.getLanguageService().findRenameLocations(scriptInfo.fileName, position, false, true)
+                    .forEach((location: ts.RenameLocation) => {
+                        const edit = toTextEdit(this.getSourceFile(project, location.fileName), location.textSpan, renameParams.newName);
+                        const editUri = path2uri(location.fileName);
+                        if (changes[editUri]) {
+                            changes[editUri].push(edit);
+                        } else {
+                            changes[editUri] = [edit];
+                        }
+                    });
+
+                return {
+                    changes,
+                };
+            }).reduce((_prev, curr) => curr, { changes: {}});
+    }
+
+    public completion(textDocumentPosition: TextDocumentPositionParams): CompletionItem[] {
+        return this.getProjectScriptInfoAt(textDocumentPosition)
+            .map(({project, scriptInfo, position}) => {
+                const options: ts.GetCompletionsAtPositionOptions = {
+                    includeExternalModuleExports: false
+                };
+                const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position, options);
+                return completions ?
+                    completions.entries.map(toCompletionItem) :
+                    [];
+
+            }).reduce((_prev, curr) => curr, []);
+    }
+
+    public definition(textDocumentPosition: TextDocumentPositionParams): Location | Location[] {
+        return this.getProjectScriptInfoAt(textDocumentPosition)
+            .map(({project, scriptInfo, position}) => {
+                const definitions = project.getLanguageService().getDefinitionAtPosition(scriptInfo.fileName, position);
+                if (definitions) {
                     return definitions.map(d => {
                         return toLocation(this.getSourceFile(project, d.fileName), d.textSpan);
                     });
-                }).reduce((_prev, curr) => curr, []);
-        });
-
-        connection.onDocumentHighlight((_textDocumentPosition: TextDocumentPositionParams): DocumentHighlight[] => {
-            return this.getProjectScriptInfoAt(_textDocumentPosition)
-                .map(({project, scriptInfo, position}) => {
-                    const highlights = project.getLanguageService().getDocumentHighlights(scriptInfo.fileName, position, []);
-                    if (highlights) {
-                        const fileHighlights = highlights.find(hl => hl.fileName === scriptInfo.fileName);
-                        if (fileHighlights) {
-                            const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
-                            return fileHighlights.highlightSpans.map( hs => toDocumentHighlight(sourceFile, hs));
-                        }
-                    }
+                } else {
                     return [];
-                }).reduce((_prev, curr) => curr, []);
-        });
+                }
+            }).reduce((_prev, curr) => curr, []);
+    }
 
-        connection.onSignatureHelp((_textDocumentPosition: TextDocumentPositionParams): SignatureHelp => {
-            const empty: SignatureHelp = { signatures: [], activeParameter: 0, activeSignature: 0 };
-            return this.getProjectScriptInfoAt(_textDocumentPosition)
-                .map(({project, scriptInfo, position}) => {
-                    const signatures = project.getLanguageService().getSignatureHelpItems(scriptInfo.fileName, position);
-                    return toSignatureHelp(signatures);
-                }).reduce((_prev, curr) => curr, empty);
-        });
-
-        connection.onExecuteCommand((params: ExecuteCommandParams): any => {
-            switch (params.command) {
-                case "codeFix":
-                    if (!params.arguments || params.arguments.length < 1) {
-                        throw new Error(`Command ${params.command} requires arguments`);
+    public documentHighlight(textDocumentPosition: TextDocumentPositionParams): DocumentHighlight[] {
+        return this.getProjectScriptInfoAt(textDocumentPosition)
+            .map(({project, scriptInfo, position}) => {
+                const highlights = project.getLanguageService().getDocumentHighlights(scriptInfo.fileName, position, []);
+                if (highlights) {
+                    const fileHighlights = highlights.find(hl => hl.fileName === scriptInfo.fileName);
+                    if (fileHighlights) {
+                        const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                        return fileHighlights.highlightSpans.map( hs => toDocumentHighlight(sourceFile, hs));
                     }
-                    return this.executeCodeFixCommand(params.arguments);
-                default:
-                    throw new Error(`Unknown command ${params.command}`);
-            }});
+                }
+                return [];
+            }).reduce((_prev, curr) => curr, []);
+    }
 
-        connection.onCodeAction((_codeActionParams: CodeActionParams): Command[] => {
-            return this.getProjectScriptInfoFor(_codeActionParams)
-                .map( ({project, scriptInfo, start, end}) => {
-                    const errorCodes = _codeActionParams.context.diagnostics
-                        .map(c => c.code)
-                        .filter(c => typeof c === "number") as number[];
-                    const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                    const actions = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions);
-                    return actions.map(toCommand);
-                }).reduce((_prev, curr) => curr, []);
+    public signatureHelp(textDocumentPosition: TextDocumentPositionParams): SignatureHelp {
+        const empty: SignatureHelp = { signatures: [], activeParameter: 0, activeSignature: 0 };
+        return this.getProjectScriptInfoAt(textDocumentPosition)
+            .map(({project, scriptInfo, position}) => {
+                const signatures = project.getLanguageService().getSignatureHelpItems(scriptInfo.fileName, position);
+                return toSignatureHelp(signatures);
+            }).reduce((_prev, curr) => curr, empty);
+    }
+
+    public executeCommand(params: ExecuteCommandParams): any {
+        switch (params.command) {
+            case "codeFix":
+                if (!params.arguments || params.arguments.length < 1) {
+                    throw new Error(`Command ${params.command} requires arguments`);
+                }
+                return this.executeCodeFixCommand(params.arguments);
+            default:
+                throw new Error(`Unknown command ${params.command}`);
+        }
+    }
+
+    public codeAction(codeActionParams: CodeActionParams): Command[] {
+        return this.getProjectScriptInfoFor(codeActionParams)
+            .map( ({project, scriptInfo, start, end}) => {
+                const errorCodes = codeActionParams.context.diagnostics
+                    .map(c => c.code)
+                    .filter(c => typeof c === "number") as number[];
+                const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                const actions = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions);
+                return actions.map(toCommand);
+            }).reduce((_prev, curr) => curr, []);
+    }
+
+    public workspaceSymbols(symbolParams: WorkspaceSymbolParams): SymbolInformation[] {
+        let allItems: SymbolInformation[] = [];
+        this.projectService.configuredProjects.forEach((project, _key) => {
+            const items = project.getLanguageService().getNavigateToItems(symbolParams.query);
+
+            const projectItems = items.map(i => {
+                const sourceFile = this.getSourceFile(project, i.fileName);
+                return itemToSymbolInformation(sourceFile, i);
+            });
+            allItems = allItems.concat(projectItems);
         });
+        return allItems;
     }
 
     private getSourceFile(project: ts.server.Project, fileName: string): ts.SourceFile {
@@ -476,7 +545,7 @@ export class Session {
         try {
             project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
         } catch (e) {
-            this.connection.console.error(e.message + "\n" + e.stack);
+            this.logger.msg(e.message + "\n" + e.stack, ts.server.Msg.Err);
             throw e;
         }
         return [{project, scriptInfo}];
@@ -604,7 +673,7 @@ export class Session {
                 break;
             case ts.server.ConfigFileDiagEvent:
                 // TODO: send config file diagnostics
-                this.connection.console.log("Received config file diagnostics: " + event.data.diagnostics.map(d => d.messageText).join(", "));
+                this.logger.info("Received config file diagnostics: " + event.data.diagnostics.map(d => d.messageText).join(", "));
                 // const { triggerFile, configFileName: configFile, diagnostics } = event.data;
                 // const bakedDiags = map(diagnostics, diagnostic => formatConfigFileDiag(diagnostic, /*includeFileName*/ true));
                 // this.event<protocol.ConfigFileDiagnosticEventBody>({
@@ -616,7 +685,7 @@ export class Session {
             case ts.server.ProjectLanguageServiceStateEvent:
                 const projectName = event.data.project.getProjectName();
                 const isEnabled = event.data.languageServiceEnabled;
-                this.connection.console.log(`Received lang service state event: project ${projectName} is ${isEnabled}`);
+                this.logger.info(`Received lang service state event: project ${projectName} is ${isEnabled}`);
                 // const eventName: protocol.ProjectLanguageServiceStateEventName = "projectLanguageServiceState";
                 // this.event<protocol.ProjectLanguageServiceStateEventBody>({
                 //  projectName: event.data.project.getProjectName(),
@@ -666,7 +735,7 @@ export class Session {
         }
         const edit: WorkspaceEdit = { changes };
         this.connection.workspace.applyEdit(edit)
-            .then(() => this.connection.console.log("aplied edit"));
+            .then(() => this.logger.info("aplied edit"));
     }
 
     private setCurrentRequest(requestId: number): void {

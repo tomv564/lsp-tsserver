@@ -149,7 +149,14 @@ export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
     return item;
 }
 
-export function toSymbolInformation(sourceFile: ts.SourceFile, treeItem: ts.NavigationTree, containerName?: string): SymbolInformation {
+export function itemToSymbolInformation(sourceFile: ts.SourceFile, treeItem: ts.NavigateToItem): SymbolInformation {
+    const symbolKind: SymbolKind = getSymbolKind(treeItem.kind);
+    const {range, uri} = toLocation(sourceFile, treeItem.textSpan);
+
+    return SymbolInformation.create(`${treeItem.name} (${treeItem.kind})`, symbolKind, range, uri);
+}
+
+export function treeToSymbolInformation(sourceFile: ts.SourceFile, treeItem: ts.NavigationTree, containerName?: string): SymbolInformation {
     const symbolKind: SymbolKind = getSymbolKind(treeItem.kind);
     const {range, uri} = toLocation(sourceFile, treeItem.spans[0]);
 
