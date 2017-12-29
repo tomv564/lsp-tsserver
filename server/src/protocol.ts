@@ -163,12 +163,37 @@ export function treeToSymbolInformation(sourceFile: ts.SourceFile, treeItem: ts.
     return SymbolInformation.create(`${treeItem.text} (${treeItem.kind})`, symbolKind, range, uri, containerName);
 }
 
-export function toCommand(action: ts.CodeAction): Command {
+export function actionToCommand(action: ts.CodeAction): Command {
     return {
         title: action.description,
         command: "codeFix",
         arguments: action.changes,
     };
+}
+
+export interface RefactorCommand {
+    fileName: string;
+    positionOrRange: number | ts.TextRange;
+    refactorName: string;
+    actionName: string;
+}
+
+export function refactorToCommands(refactor: ts.ApplicableRefactorInfo, fileName: string, positionOrRange: number | ts.TextRange): Command[] {
+
+    return refactor.actions.map( action => {
+        const args: RefactorCommand = {
+            fileName,
+            positionOrRange,
+            refactorName: refactor.name,
+            actionName: action.name
+        };
+
+        return {
+            title: action.description,
+            command: "refactor",
+            arguments: [args]
+        };
+    });
 }
 
 function toRange(sourceFile: ts.SourceFile, span: ts.TextSpan) {

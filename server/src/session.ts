@@ -5,7 +5,7 @@ import {
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams, DocumentHighlight, DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeParams, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit, WorkspaceSymbolParams,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { convertTsDiagnostic, itemToSymbolInformation, relevantDocumentSymbols, TextDocumentRangeParams, toCommand, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
+import { actionToCommand, convertTsDiagnostic, itemToSymbolInformation, RefactorCommand, refactorToCommands, relevantDocumentSymbols, TextDocumentRangeParams, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -182,11 +182,6 @@ export class Session {
         connection.onCodeAction((params) => this.codeAction(params));
         connection.onWorkspaceSymbol((params) => this.workspaceSymbols(params));
 
-        // connection.onWorkspaceSymbol((_workspaceSymbolParams: WorkspaceSymbolParams): SymbolInformation[] => {
-        //     this.projectService.inferredProjects.values()
-        //     return [];
-        // });
-
     }
 
     public initialize(_params: InitializeParams): InitializeResult {
@@ -265,17 +260,11 @@ export class Session {
                     };
                 } else {
                     // this is the LSP case - no range sent.
-                    const newLen = c.text.length;
-                    const prevLen = sourceFile.getEnd();
-                    const snapshot = scriptInfo.getSnapshot();
-                    const ssLen = snapshot.getLength();
-                    // const script
-                    this.logger.info(`didChange lengths newLen ${newLen} prev sourceFile ${prevLen} pref snapshot ${ssLen}`);
-                    // const changeSummary = `Replacing original (0-${length}) with new (0-${newLen}) to sourceFile ${scriptInfo.path} (${scriptInfo.getLatestVersion()}`;
-
-                    // this.logger.info(changeSummary);
+                    const currentLength = scriptInfo.getSnapshot().getLength();
+                    // const newLen = c.text.length;
+                    // this.logger.info(`didChange lengths newLen ${newLen} prev sourceFile ${currentLength}`);
                     return {
-                        span: { start: 0, length: ssLen},
+                        span: { start: 0, length: currentLength},
                         newText: c.text,
                     };
                 }
@@ -485,7 +474,7 @@ export class Session {
         return this.getProjectScriptInfoAt(textDocumentPosition)
             .map(({project, scriptInfo, position}) => {
                 const signatures = project.getLanguageService().getSignatureHelpItems(scriptInfo.fileName, position);
-                return toSignatureHelp(signatures);
+                if (signatures) { return toSignatureHelp(signatures); } else { return empty; }
             }).reduce((_prev, curr) => curr, empty);
     }
 
@@ -496,6 +485,11 @@ export class Session {
                     throw new Error(`Command ${params.command} requires arguments`);
                 }
                 return this.executeCodeFixCommand(params.arguments);
+            case "refactor":
+                if (!params.arguments || params.arguments.length < 1) {
+                    throw new Error(`Command ${params.command} requires arguments`);
+                }
+                return this.executeRefactorCommand(params.arguments);
             default:
                 throw new Error(`Unknown command ${params.command}`);
         }
@@ -508,8 +502,18 @@ export class Session {
                     .map(c => c.code)
                     .filter(c => typeof c === "number") as number[];
                 const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                const actions = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions);
-                return actions.map(toCommand);
+                const fixes = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions);
+                const positionOrRange = start === end ? start : {pos: start, end};
+                this.logger.info(`Getting refactors for ${scriptInfo.fileName} at position ${positionOrRange}`);
+                const refactors = project.getLanguageService().getApplicableRefactors(scriptInfo.fileName, positionOrRange);
+                this.logger.info(`Got refactors ${JSON.stringify(refactors)}`);
+                let allActions = fixes.map(actionToCommand);
+                if (refactors) {
+                    refactors.forEach(r => {
+                        allActions = allActions.concat(refactorToCommands(r, scriptInfo.fileName, positionOrRange));
+                    });
+                }
+                return allActions;
             }).reduce((_prev, curr) => curr, []);
     }
 
@@ -730,6 +734,31 @@ export class Session {
             const filePath = change.fileName;
             const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
             const sourceFile = this.getSourceFile(project, filePath);
+            const uri = path2uri(change.fileName);
+            changes[uri] = change.textChanges.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
+        }
+        const edit: WorkspaceEdit = { changes };
+        this.connection.workspace.applyEdit(edit)
+            .then(() => this.logger.info("aplied edit"));
+    }
+
+    private executeRefactorCommand(refactors: RefactorCommand[]): void {
+        if (refactors.length !== 1) {
+            throw new Error("Only 1 refactor can be supplied with a command");
+        }
+        const refactor = refactors[0];
+        const {fileName, positionOrRange } = refactor;
+
+        const formatOptions = this.projectService.getFormatCodeOptions(ts.server.toNormalizedPath(fileName));
+
+        const changes: {[uri: string]: TextEdit[]} = {};
+        const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(fileName), false);
+        const refactorEdits = project.getLanguageService().getEditsForRefactor(fileName, formatOptions, positionOrRange, refactor.refactorName, refactor.actionName);
+
+        for (const change of refactorEdits.edits) {
+            const filePath = change.fileName;
+            const fileProject = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
+            const sourceFile = this.getSourceFile(fileProject, filePath);
             const uri = path2uri(change.fileName);
             changes[uri] = change.textChanges.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
         }
