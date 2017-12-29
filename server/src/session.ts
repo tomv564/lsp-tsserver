@@ -729,7 +729,13 @@ export class Session {
             throw new Error("No changes supplied for code fix command");
         }
 
-        const changes: {[uri: string]: TextEdit[]} = {};
+        const edit = this.toWorkspaceEdit(fileTextChanges);
+        this.connection.workspace.applyEdit(edit)
+            .then(() => this.logger.info("aplied edit"));
+    }
+
+    private toWorkspaceEdit(fileTextChanges: ts.FileTextChanges[]) {
+        const changes: { [uri: string]: TextEdit[]; } = {};
         for (const change of fileTextChanges) {
             const filePath = change.fileName;
             const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
@@ -737,9 +743,8 @@ export class Session {
             const uri = path2uri(change.fileName);
             changes[uri] = change.textChanges.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
         }
-        const edit: WorkspaceEdit = { changes };
-        this.connection.workspace.applyEdit(edit)
-            .then(() => this.logger.info("aplied edit"));
+        const edit: WorkspaceEdit = {changes};
+        return edit;
     }
 
     private executeRefactorCommand(refactors: RefactorCommand[]): void {
@@ -750,19 +755,11 @@ export class Session {
         const {fileName, positionOrRange } = refactor;
 
         const formatOptions = this.projectService.getFormatCodeOptions(ts.server.toNormalizedPath(fileName));
-
-        const changes: {[uri: string]: TextEdit[]} = {};
         const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(fileName), false);
+        this.logger.info(`Getting edits for refactor ${fileName}, ${positionOrRange}, ${refactor.refactorName}, ${refactor.actionName}`);
         const refactorEdits = project.getLanguageService().getEditsForRefactor(fileName, formatOptions, positionOrRange, refactor.refactorName, refactor.actionName);
 
-        for (const change of refactorEdits.edits) {
-            const filePath = change.fileName;
-            const fileProject = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(filePath), false);
-            const sourceFile = this.getSourceFile(fileProject, filePath);
-            const uri = path2uri(change.fileName);
-            changes[uri] = change.textChanges.map(({span, newText}) => toTextEdit(sourceFile, span, newText));
-        }
-        const edit: WorkspaceEdit = { changes };
+        const edit: WorkspaceEdit = this.toWorkspaceEdit(refactorEdits.edits);
         this.connection.workspace.applyEdit(edit)
             .then(() => this.logger.info("aplied edit"));
     }
