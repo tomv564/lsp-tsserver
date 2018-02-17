@@ -430,7 +430,8 @@ export class Session {
         return this.getProjectScriptInfoAt(textDocumentPosition)
             .map(({project, scriptInfo, position}) => {
                 const options: ts.GetCompletionsAtPositionOptions = {
-                    includeExternalModuleExports: false
+                    includeExternalModuleExports: false,
+                    includeInsertTextCompletions: false
                 };
                 const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position, options);
                 return completions ?
