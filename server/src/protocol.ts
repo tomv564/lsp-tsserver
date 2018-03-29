@@ -297,6 +297,7 @@ export function convertDiagnosticCategory(category: ts.DiagnosticCategory): Diag
             return DiagnosticSeverity.Warning;
         case ts.DiagnosticCategory.Message:
             return DiagnosticSeverity.Information;
-            // unmapped: DiagnosticSeverity.Hint
+        case ts.DiagnosticCategory.Suggestion:
+            return DiagnosticSeverity.Hint;
     }
 }

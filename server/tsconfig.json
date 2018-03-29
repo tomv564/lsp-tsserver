@@ -3,7 +3,7 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitAny": true,
-		"noImplicitReturns": true,		
+		"noImplicitReturns": true,
 		"target": "es6",
 		"module": "commonjs",
 		"plugins": [
@@ -12,6 +12,7 @@
 		"moduleResolution": "node",
 		"sourceMap": true,
 		"lib" : [ "es2016" ],
+		//"rootDir": "src",
 		"outDir" : "build"
 		// "outDir": "../client/server"
 	},
