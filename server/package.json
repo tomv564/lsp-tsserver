@@ -1,7 +1,7 @@
 {
 	"name": "lsp-tsserver",
-	"bin": "./build/server.js",
-	"description": "LSP version of tsserver.",
+	"bin": "./build/src/server.js",
+	"description": "LSP wrapper around tsserver.",
 	"version": "0.0.1",
 	"author": "Tom van Ommeren",
 	"license": "MIT",
@@ -19,7 +19,8 @@
 	"scripts": {
 		"build": "tsc -p .",
 		"watch": "tsc -w -p .",
-		"test": "tape build/test/*_tests.js"
+		"test": "tape build/test/*_tests.js",
+		"start": "$npm_package_bin_lsp_tsserver"
 	},
 	"devDependencies": {
 		"@types/node": "8.0.50",
