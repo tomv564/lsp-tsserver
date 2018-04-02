@@ -20,7 +20,8 @@
 		"build": "tsc -p .",
 		"watch": "tsc -w -p .",
 		"test": "tape build/test/*_tests.js",
-		"start": "$npm_package_bin_lsp_tsserver"
+		"start": "$npm_package_bin_lsp_tsserver",
+		"prepublish": "npm run build && npm run test"
 	},
 	"devDependencies": {
 		"@types/node": "8.0.50",
