@@ -24,7 +24,7 @@
 		"watch": "tsc -w -p .",
 		"test": "tape build/test/*_tests.js",
 		"start": "$npm_package_bin_lsp_tsserver",
-		"prepublish": "npm run build && mkdir -p dist && cp -R build/src/ dist"
+		"prepare": "npm run build && mkdir -p dist && cp -R build/src/ dist"
 	},
 	"devDependencies": {
 		"@types/node": "8.0.50",
@@ -33,6 +33,6 @@
 		"sinon": "4.1.3",
 		"tape": "4.8.0",
 		"tslint": "5.8.0",
-		"tslint-language-service": "0.9.8"
+		"tslint-language-service": "0.9.9"
 	}
 }
