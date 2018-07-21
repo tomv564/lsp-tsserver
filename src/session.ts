@@ -458,7 +458,7 @@ export class Session {
     public documentHighlight(textDocumentPosition: TextDocumentPositionParams): DocumentHighlight[] {
         return this.getProjectScriptInfoAt(textDocumentPosition)
             .map(({project, scriptInfo, position}) => {
-                const highlights = project.getLanguageService().getDocumentHighlights(scriptInfo.fileName, position, []);
+                const highlights = project.getLanguageService().getDocumentHighlights(scriptInfo.fileName, position, [scriptInfo.fileName]);
                 if (highlights) {
                     const fileHighlights = highlights.find(hl => hl.fileName === scriptInfo.fileName);
                     if (fileHighlights) {
