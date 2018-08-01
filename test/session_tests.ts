@@ -1,20 +1,20 @@
 // import * as sinon from "sinon";
 import * as test from "tape";
 import * as ts from "typescript/lib/tsserverlibrary";
-import {DidChangeTextDocumentParams, DidOpenTextDocumentParams, IConnection} from "vscode-languageserver";
-import {createSession, LSPSessionOptions} from "../src/session";
+// import {DidChangeTextDocumentParams, DidOpenTextDocumentParams, IConnection} from "vscode-languageserver";
+// import {createSession, LSPSessionOptions} from "../src/session";
 
-const logger: ts.server.Logger = {
-    close: () => { /* nop */},
-    hasLevel: (_level: ts.server.LogLevel) => false,
-    loggingEnabled: () => false,
-    perftrc: (_s: string) => { /* nop */},
-    info: (_s: string) => { console.log(_s); /* nop */},
-    startGroup: () => { /* nop */},
-    endGroup: () => { /* nop */},
-    msg: (_s: string, _type?: ts.server.Msg.Types) => { console.log(_s); /* nop */},
-    getLogFileName: () => ""
-};
+// const logger: ts.server.Logger = {
+//     close: () => { /* nop */},
+//     hasLevel: (_level: ts.server.LogLevel) => false,
+//     loggingEnabled: () => false,
+//     perftrc: (_s: string) => { /* nop */},
+//     info: (_s: string) => {  /* nop | console.log(_s);*/},
+//     startGroup: () => { /* nop */},
+//     endGroup: () => { /* nop */},
+//     msg: (_s: string, _type?: ts.server.Msg.Types) => { /* console.log(_s); */ /* nop */},
+//     getLogFileName: () => ""
+// };
 
 const sys =  ts.sys as ts.server.ServerHost;
 sys.setTimeout = setTimeout;
@@ -33,33 +33,33 @@ sys.require = (initialDir: string, moduleName: string): ts.server.RequireResult 
     }
 };
 
-const useSingleInferredProject = false;
-const useInferredProjectPerProjectRoot = false;
-// import * as ts from "typescript/lib/tsserverlibrary";
-// import {convertTsDiagnostic} from "../src/protocol";
+// const useSingleInferredProject = false;
+// const useInferredProjectPerProjectRoot = false;
+// // import * as ts from "typescript/lib/tsserverlibrary";
+// // import {convertTsDiagnostic} from "../src/protocol";
 
-const cancellationToken = ts.server.nullCancellationToken;
-const typingsInstaller = ts.server.nullTypingsInstaller;
+// const cancellationToken = ts.server.nullCancellationToken;
+// const typingsInstaller = ts.server.nullTypingsInstaller;
 
-const options: LSPSessionOptions = {
-    host: sys,
-    cancellationToken,
-    // installerEventPort: eventPort,
-    // canUseEvents: eventPort === undefined,
-    useSingleInferredProject,
-    useInferredProjectPerProjectRoot,
-    typingsInstaller,
-    // disableAutomaticTypingAcquisition,
-    // globalTypingsCacheLocation: getGlobalTypingsCacheLocation(),
-    // typingSafeListLocation,
-    // typesMapLocation,
-    // npmLocation,
-    // telemetryEnabled,
-    logger,
-    // globalPlugins,
-    // pluginProbeLocations,
-    // allowLocalPluginLoads
-};
+// const options: LSPSessionOptions = {
+//     host: sys,
+//     cancellationToken,
+//     // installerEventPort: eventPort,
+//     // canUseEvents: eventPort === undefined,
+//     useSingleInferredProject,
+//     useInferredProjectPerProjectRoot,
+//     typingsInstaller,
+//     // disableAutomaticTypingAcquisition,
+//     // globalTypingsCacheLocation: getGlobalTypingsCacheLocation(),
+//     // typingSafeListLocation,
+//     // typesMapLocation,
+//     // npmLocation,
+//     // telemetryEnabled,
+//     logger,
+//     // globalPlugins,
+//     // pluginProbeLocations,
+//     // allowLocalPluginLoads
+// };
 
 // diagnostics code from session.ts
 
