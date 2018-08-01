@@ -2,7 +2,7 @@
 	"name": "lsp-tsserver",
 	"bin": "./dist/server.js",
 	"description": "LSP wrapper around tsserver.",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"author": "Tom van Ommeren",
 	"license": "MIT",
 	"engines": {
@@ -16,7 +16,7 @@
 		"url": "https://github.com/tomv564/lsp-tsserver"
 	},
 	"dependencies": {
-		"typescript": "2.8.1",
+		"typescript": "2.9.2",
 		"vscode-languageserver": "3.5.0"
 	},
 	"scripts": {

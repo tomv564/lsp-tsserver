@@ -503,10 +503,11 @@ export class Session {
                     .map(c => c.code)
                     .filter(c => typeof c === "number") as number[];
                 const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                const fixes = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions);
+                const preferences: ts.UserPreferences = {};
+                const fixes = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions, preferences);
                 const positionOrRange = start === end ? start : {pos: start, end};
                 this.logger.info(`Getting refactors for ${scriptInfo.fileName} at position ${positionOrRange}`);
-                const refactors = project.getLanguageService().getApplicableRefactors(scriptInfo.fileName, positionOrRange);
+                const refactors = project.getLanguageService().getApplicableRefactors(scriptInfo.fileName, positionOrRange, preferences);
                 this.logger.info(`Got refactors ${JSON.stringify(refactors)}`);
                 let allActions = fixes.map(actionToCommand);
                 if (refactors) {
@@ -758,7 +759,8 @@ export class Session {
         const formatOptions = this.projectService.getFormatCodeOptions(ts.server.toNormalizedPath(fileName));
         const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(fileName), false);
         this.logger.info(`Getting edits for refactor ${fileName}, ${positionOrRange}, ${refactor.refactorName}, ${refactor.actionName}`);
-        const refactorEdits = project.getLanguageService().getEditsForRefactor(fileName, formatOptions, positionOrRange, refactor.refactorName, refactor.actionName);
+        const preferences: ts.UserPreferences = {};
+        const refactorEdits = project.getLanguageService().getEditsForRefactor(fileName, formatOptions, positionOrRange, refactor.refactorName, refactor.actionName, preferences);
 
         const edit: WorkspaceEdit = this.toWorkspaceEdit(refactorEdits.edits);
         this.connection.workspace.applyEdit(edit)
