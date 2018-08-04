@@ -196,6 +196,7 @@ export class Session {
                     commands: []
                 },
                 completionProvider: {
+                    triggerCharacters: ["."],
                     resolveProvider: false
                 },
                 documentFormattingProvider: true,
