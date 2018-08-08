@@ -504,7 +504,7 @@ export class Session {
                     .map(c => c.code)
                     .filter(c => typeof c === "number") as number[];
                 const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
-                const preferences: ts.UserPreferences = {};
+                const preferences = this.projectService.getPreferences(scriptInfo.fileName);
                 const fixes = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions, preferences);
                 const positionOrRange = start === end ? start : {pos: start, end};
                 this.logger.info(`Getting refactors for ${scriptInfo.fileName} at position ${positionOrRange}`);
@@ -760,7 +760,7 @@ export class Session {
         const formatOptions = this.projectService.getFormatCodeOptions(ts.server.toNormalizedPath(fileName));
         const project = this.projectService.getDefaultProjectForFile(ts.server.toNormalizedPath(fileName), false);
         this.logger.info(`Getting edits for refactor ${fileName}, ${positionOrRange}, ${refactor.refactorName}, ${refactor.actionName}`);
-        const preferences: ts.UserPreferences = {};
+        const preferences = this.projectService.getPreferences(ts.server.toNormalizedPath(fileName));
         const refactorEdits = project.getLanguageService().getEditsForRefactor(fileName, formatOptions, positionOrRange, refactor.refactorName, refactor.actionName, preferences);
 
         const edit: WorkspaceEdit = this.toWorkspaceEdit(refactorEdits.edits);
