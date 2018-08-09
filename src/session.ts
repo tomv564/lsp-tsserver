@@ -588,8 +588,10 @@ export class Session {
     }
 
     private combinedCheck(file: ts.server.NormalizedPath, project: ts.server.Project) {
-        const diags: ReadonlyArray<ts.Diagnostic> = project.getLanguageService().getSyntacticDiagnostics(file)
-            .concat(project.getLanguageService().getSemanticDiagnostics(file));
+        const diags: ReadonlyArray<ts.Diagnostic> =
+            project.getLanguageService().getSyntacticDiagnostics(file)
+            .concat(project.getLanguageService().getSemanticDiagnostics(file))
+            .concat(project.getLanguageService().getSuggestionDiagnostics(file));
         this.connection.sendDiagnostics({
             uri: path2uri(file),
             diagnostics: diags.map(convertTsDiagnostic),
