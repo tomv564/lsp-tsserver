@@ -11,6 +11,11 @@ import { createSession, LSPSessionOptions } from "./session";
 
 declare module "typescript/lib/tsserverlibrary" {
     function resolveJavaScriptModule(moduleName: string, initialDir: string, sys: ModuleResolutionHost): string;
+    namespace server {
+        // moved to jsTypings/shared.ts in typescript 3.0.1
+        function findArgument(argumentName: string): string | undefined;
+        function hasArgument(argumentName: string): boolean;
+    }
 }
 
 // Create a connection for the server. The connection uses stdin/stdout as a transport

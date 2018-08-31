@@ -475,7 +475,10 @@ export class Session {
         const empty: SignatureHelp = { signatures: [], activeParameter: 0, activeSignature: 0 };
         return this.getProjectScriptInfoAt(textDocumentPosition)
             .map(({project, scriptInfo, position}) => {
-                const signatures = project.getLanguageService().getSignatureHelpItems(scriptInfo.fileName, position);
+                const options: ts.SignatureHelpItemsOptions = {
+                    // triggerReason?: SignatureHelpTriggerReason;
+                };
+                const signatures = project.getLanguageService().getSignatureHelpItems(scriptInfo.fileName, position, options);
                 if (signatures) { return toSignatureHelp(signatures); } else { return empty; }
             }).reduce((_prev, curr) => curr, empty);
     }

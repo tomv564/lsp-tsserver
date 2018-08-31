@@ -2,7 +2,7 @@
 	"name": "lsp-tsserver",
 	"bin": "./dist/server.js",
 	"description": "LSP wrapper around tsserver.",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"author": "Tom van Ommeren",
 	"license": "MIT",
 	"engines": {
@@ -16,7 +16,7 @@
 		"url": "https://github.com/tomv564/lsp-tsserver"
 	},
 	"dependencies": {
-		"typescript": "2.9.2",
+		"typescript": "^3.0.1",
 		"vscode-languageserver": "3.5.0"
 	},
 	"scripts": {
@@ -33,6 +33,6 @@
 		"sinon": "4.1.3",
 		"tape": "4.8.0",
 		"tslint": "5.8.0",
-		"tslint-language-service": "0.9.9"
+		"tslint-language-service": "^0.9.9"
 	}
 }
