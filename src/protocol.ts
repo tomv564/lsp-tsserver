@@ -1,5 +1,5 @@
 import * as ts from "typescript/lib/tsserverlibrary";
-import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentHighlight, DocumentHighlightKind, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, SymbolInformation, SymbolKind, TextDocumentIdentifier, TextEdit } from "vscode-languageserver-protocol";
+import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentHighlight, DocumentHighlightKind, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, SymbolInformation, SymbolKind, TextDocumentIdentifier, TextDocumentPositionParams, TextEdit } from "vscode-languageserver-protocol";
 import {path2uri} from "./util";
 
 /**
@@ -134,24 +134,44 @@ export function toDocumentHighlight(sourceFile: ts.SourceFile, span: ts.Highligh
     };
 }
 
-export function toCompletionItem(entry: ts.CompletionEntry): CompletionItem {
+export function toCompletionItem(entry: ts.CompletionEntry, textDocumentPosition: TextDocumentPositionParams): CompletionItem {
     const item: CompletionItem = { label: entry.name };
-
     const completionKind = completionKinds[entry.kind];
     if (completionKind && typeof(completionKind) === "number") {
         item.kind = completionKind;
     }
+    if (entry.insertText) {
+        item.insertText = entry.insertText;
+    }
+    // if (entry.replacementSpan) {
+    //     // TODO: make a textEdit.
+    // }
     if (entry.sortText) {
         item.sortText = entry.sortText;
     }
 
     // context for future resolve requests:
-    // item.data = {
-    //  uri,
-    //  offset,
-    //  entryName: entry.name,
-    // }
+    item.data = {
+        textDocument: textDocumentPosition.textDocument,
+        position: textDocumentPosition.position,
+        source: entry.source
+    };
     return item;
+}
+
+export function applyCompletionEntryDetails(sourceFile: ts.SourceFile, entryDetails: ts.CompletionEntryDetails, item: CompletionItem): void {
+    if (entryDetails.codeActions) {
+        item.additionalTextEdits = [];
+        entryDetails.codeActions.forEach(action => {
+            action.changes.forEach(change => {
+                // only support additional edits on current file.
+                if (change.fileName === sourceFile.fileName) {
+                    const edits = change.textChanges.map(tc => toTextEdit(sourceFile, tc.span, tc.newText));
+                    item.additionalTextEdits.push(...edits);
+                }
+            });
+        });
+    }
 }
 
 export function itemToSymbolInformation(sourceFile: ts.SourceFile, treeItem: ts.NavigateToItem): SymbolInformation {

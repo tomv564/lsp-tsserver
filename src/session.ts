@@ -5,7 +5,7 @@ import {
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams, DocumentHighlight, DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeParams, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit, WorkspaceSymbolParams,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { actionToCommand, CommandNames, convertTsDiagnostic, itemToSymbolInformation, RefactorCommand, refactorToCommands, relevantDocumentSymbols, TextDocumentRangeParams, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
+import { actionToCommand, applyCompletionEntryDetails, CommandNames, convertTsDiagnostic, itemToSymbolInformation, RefactorCommand, refactorToCommands, relevantDocumentSymbols, TextDocumentRangeParams, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -173,6 +173,7 @@ export class Session {
 
         connection.onRenameRequest((params) => this.renameRequest(params));
         connection.onCompletion((params) => this.completion(params));
+        connection.onCompletionResolve((params) => this.completionResolve(params));
         connection.onDefinition((params) => this.definition(params));
         connection.onDocumentHighlight((params) => this.documentHighlight(params));
         connection.onSignatureHelp((params) => this.signatureHelp(params));
@@ -197,7 +198,7 @@ export class Session {
                 },
                 completionProvider: {
                     triggerCharacters: ["."],
-                    resolveProvider: false
+                    resolveProvider: true
                 },
                 documentFormattingProvider: true,
                 documentRangeFormattingProvider: true,
@@ -431,15 +432,29 @@ export class Session {
         return this.getProjectScriptInfoAt(textDocumentPosition)
             .map(({project, scriptInfo, position}) => {
                 const options: ts.GetCompletionsAtPositionOptions = {
-                    includeExternalModuleExports: false,
-                    includeInsertTextCompletions: false
+                    includeExternalModuleExports: true,
+                    includeInsertTextCompletions: true
                 };
-                const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position, options);
-                return completions ?
-                    completions.entries.map(toCompletionItem) :
-                    [];
 
+                const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position, options);
+                return completions ? completions.entries.map(e => toCompletionItem(e, textDocumentPosition)) : [];
             }).reduce((_prev, curr) => curr, []);
+    }
+
+    public completionResolve(completionItem: CompletionItem): CompletionItem {
+        return this.getProjectScriptInfoAt(completionItem.data)
+            .map(({project, scriptInfo, position}) => {
+                const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
+                const preferences = this.projectService.getPreferences(scriptInfo.fileName);
+                const entryDetails = project.getLanguageService().getCompletionEntryDetails(scriptInfo.fileName, position, completionItem.label, formatOptions, completionItem.data.source, preferences);
+                const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
+                if (entryDetails) {
+                    applyCompletionEntryDetails(sourceFile, entryDetails, completionItem);
+                }
+
+                return completionItem;
+
+            }).reduce((_prev, curr) => curr, completionItem);
     }
 
     public definition(textDocumentPosition: TextDocumentPositionParams): Location | Location[] {
