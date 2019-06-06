@@ -1,13 +1,13 @@
 {
 	"compilerOptions": {
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
+		// "noUnusedLocals": true,
+		// "noUnusedParameters": true,
 		"noImplicitAny": true,
 		"noImplicitReturns": true,
 		"target": "es6",
 		"module": "commonjs",
 		"plugins": [
-			{"name": "tslint-language-service"}
+			{"name": "tslint-language-service-ts3"}
 		],
 		"moduleResolution": "node",
 		"sourceMap": true,
