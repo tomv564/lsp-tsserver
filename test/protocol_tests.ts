@@ -1,8 +1,8 @@
 import * as test from "tape";
 import * as ts from "typescript/lib/tsserverlibrary";
-import { TextDocumentPositionParams, CompletionItemKind } from "vscode-languageserver-protocol";
-import {convertTsDiagnostic, toCompletionItem} from "../src/protocol";
 import { ScriptElementKind } from "typescript/lib/tsserverlibrary";
+import { CompletionItemKind, TextDocumentPositionParams } from "vscode-languageserver-protocol";
+import {convertTsDiagnostic, toCompletionItem} from "../src/protocol";
 
 test("toDiagnostic", t => {
 

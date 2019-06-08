@@ -190,7 +190,10 @@ export class Session {
         return {
             capabilities: {
                 // Tell the client that the server works in FULL text document sync mode
-                textDocumentSync: TextDocumentSyncKind.Full,
+                textDocumentSync: {
+                    openClose: true,
+                    change: TextDocumentSyncKind.Full
+                },
                 // Tell the client that the server support code complete
                 codeActionProvider: true,
                 executeCommandProvider: {
