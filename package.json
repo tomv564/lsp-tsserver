@@ -18,7 +18,9 @@
 	"dependencies": {
 		"tslint-language-service-ts3": "^1.0.0",
 		"typescript": "^3.0.1",
-		"vscode-languageserver": "3.5.0"
+		"vscode-languageserver": "4.2.0",
+		"vscode-languageserver-protocol": "3.8.0",
+		"vscode-languageserver-types": "3.8.0"
 	},
 	"scripts": {
 		"build": "tsc -p .",

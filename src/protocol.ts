@@ -1,5 +1,5 @@
 import * as ts from "typescript/lib/tsserverlibrary";
-import { Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentHighlight, DocumentHighlightKind, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, SymbolInformation, SymbolKind, TextDocumentIdentifier, TextDocumentPositionParams, TextEdit } from "vscode-languageserver-protocol";
+import { CodeAction, Command, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentHighlight, DocumentHighlightKind, Hover, Location, MarkedString, ParameterInformation, Range, SignatureHelp, SignatureInformation, SymbolInformation, SymbolKind, TextDocumentIdentifier, TextDocumentPositionParams, TextEdit } from "vscode-languageserver-protocol";
 import {path2uri} from "./util";
 
 /**
@@ -143,9 +143,16 @@ export function toCompletionItem(entry: ts.CompletionEntry, textDocumentPosition
     if (entry.insertText) {
         item.insertText = entry.insertText;
     }
-    // if (entry.replacementSpan) {
-    //     // TODO: make a textEdit.
-    // }
+    if (entry.replacementSpan) {
+        // TODO: make a textEdit, need sourceFile
+        // item.textEdit = {
+        //     range: {
+        //         start: { line: entry.replacementSpan., character, }
+        //     }
+        //     newText: entry.insertText
+        // }
+
+    }
     if (entry.sortText) {
         item.sortText = entry.sortText;
     }
@@ -201,6 +208,27 @@ export interface RefactorCommand {
     positionOrRange: number | ts.TextRange;
     refactorName: string;
     actionName: string;
+}
+
+export function refactorToCodeActions(refactor: ts.ApplicableRefactorInfo, fileName: string, positionOrRange: number | ts.TextRange): CodeAction[] {
+
+    return refactor.actions.map( action => {
+        const args: RefactorCommand = {
+            fileName,
+            positionOrRange,
+            refactorName: refactor.name,
+            actionName: action.name
+        };
+
+        return {
+            title: action.description,
+            command: {
+                title: action.description,
+                command: CommandNames.Refactor,
+                arguments: [args]
+            }
+        };
+    });
 }
 
 export function refactorToCommands(refactor: ts.ApplicableRefactorInfo, fileName: string, positionOrRange: number | ts.TextRange): Command[] {

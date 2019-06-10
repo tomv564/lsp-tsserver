@@ -1,11 +1,11 @@
 import * as ts from "typescript/lib/tsserverlibrary";
 import {
-    CodeActionParams,
-    Command, CompletionItem, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams, DocumentHighlight, DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeParams, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit, WorkspaceSymbolParams,
+    ClientCapabilities, CodeAction,
+    CodeActionParams, Command, CompletionItem, DidChangeConfigurationParams,
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams, DocumentHighlight, DocumentOnTypeFormattingParams, DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, Hover, IConnection, InitializeParams, InitializeResult, Location, Position, ReferenceParams, RenameParams, SignatureHelp, SymbolInformation, TextDocumentIdentifier, TextDocumentPositionParams, TextDocumentSyncKind, TextEdit, WorkspaceEdit, WorkspaceSymbolParams,
 } from "vscode-languageserver";
 import { MultistepOperation, MultistepOperationHost, NextStep } from "./multistepoperation";
-import { actionToCommand, applyCompletionEntryDetails, CommandNames, convertTsDiagnostic, itemToSymbolInformation, RefactorCommand, refactorToCommands, relevantDocumentSymbols, TextDocumentRangeParams, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
+import { actionToCommand, applyCompletionEntryDetails, CommandNames, convertTsDiagnostic, itemToSymbolInformation, RefactorCommand, refactorToCodeActions, refactorToCommands, relevantDocumentSymbols, TextDocumentRangeParams, toCompletionItem, toDocumentHighlight, toHover, toLocation, toSignatureHelp, toTextEdit, treeToSymbolInformation } from "./protocol";
 import { mapDefined, path2uri, uri2path} from "./util";
 
 declare module "typescript/lib/tsserverlibrary" {
@@ -105,6 +105,7 @@ export class Session {
 
     private openFiles = new Set<string>();
     private connection: IConnection;
+    private clientCapabilites: ClientCapabilities;
 
     constructor(connection: IConnection | undefined, opts: LSPSessionOptions) {
         this.connection = connection;
@@ -185,7 +186,8 @@ export class Session {
 
     }
 
-    public initialize(_params: InitializeParams): InitializeResult {
+    public initialize(params: InitializeParams): InitializeResult {
+        this.clientCapabilites = params.capabilities;
         // workspaceRoot = params.rootPath;
         return {
             capabilities: {
@@ -518,7 +520,7 @@ export class Session {
         }
     }
 
-    public codeAction(codeActionParams: CodeActionParams): Command[] {
+    public codeAction(codeActionParams: CodeActionParams): Array<(Command | CodeAction)> {
         return this.getProjectScriptInfoFor(codeActionParams)
             .map( ({project, scriptInfo, start, end}) => {
                 const errorCodes = codeActionParams.context.diagnostics
@@ -527,17 +529,44 @@ export class Session {
                 const formatOptions = this.projectService.getFormatCodeOptions(scriptInfo.fileName);
                 const preferences = this.projectService.getPreferences(scriptInfo.fileName);
                 const fixes = project.getLanguageService().getCodeFixesAtPosition(scriptInfo.fileName, start, end, errorCodes, formatOptions, preferences);
+                this.logger.info(`Got codefixes ${JSON.stringify(fixes)}`);
                 const positionOrRange = start === end ? start : {pos: start, end};
                 this.logger.info(`Getting refactors for ${scriptInfo.fileName} at position ${positionOrRange}`);
                 const refactors = project.getLanguageService().getApplicableRefactors(scriptInfo.fileName, positionOrRange, preferences);
                 this.logger.info(`Got refactors ${JSON.stringify(refactors)}`);
-                let allActions = fixes.map(actionToCommand);
-                if (refactors) {
-                    refactors.forEach(r => {
-                        allActions = allActions.concat(refactorToCommands(r, scriptInfo.fileName, positionOrRange));
+
+                const codeActionCapabilities = this.clientCapabilites.textDocument.codeAction;
+                if (codeActionCapabilities && codeActionCapabilities.codeActionLiteralSupport) {
+
+                    let actions: CodeAction[] = fixes.map(action => {
+                        const changes: {[uri: string]: TextEdit[]} = {};
+                        action.changes.forEach(c => {
+                            const sourceFile = this.getSourceFile(project, c.fileName);
+                            const fileChanges = c.textChanges.map(tc => toTextEdit(sourceFile, tc.span, tc.newText));
+                            changes[path2uri(c.fileName)] = fileChanges;
+                        });
+                        return {
+                            title: action.description,
+                            edit: {
+                                changes
+                            }
+                        };
                     });
+                    if (refactors) {
+                        refactors.forEach(r => {
+                            actions = actions.concat(refactorToCodeActions(r, scriptInfo.fileName, positionOrRange));
+                        });
+                    }
+                    return actions;
+                } else {
+                    let commands = fixes.map(actionToCommand);
+                    if (refactors) {
+                        refactors.forEach(r => {
+                            commands = commands.concat(refactorToCommands(r, scriptInfo.fileName, positionOrRange));
+                        });
+                    }
+                    return commands;
                 }
-                return allActions;
             }).reduce((_prev, curr) => curr, []);
     }
 
