@@ -4,7 +4,7 @@
 
 import * as ts from "typescript/lib/tsserverlibrary";
 import {
-    createConnection, IConnection, StreamMessageReader, StreamMessageWriter,
+    createConnection, IConnection
 } from "vscode-languageserver";
 import { LSPLogger } from "./logger";
 import { createSession, LSPSessionOptions } from "./session";
@@ -18,8 +18,7 @@ declare module "typescript/lib/tsserverlibrary" {
     }
 }
 
-// Create a connection for the server. The connection uses stdin/stdout as a transport
-const connection: IConnection = createConnection(new StreamMessageReader(process.stdin), new StreamMessageWriter(process.stdout));
+const connection: IConnection = createConnection();
 
 connection.onDidChangeWatchedFiles((_change) => {
     // Monitored files have change in VSCode
