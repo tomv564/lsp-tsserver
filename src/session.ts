@@ -17,6 +17,29 @@ declare module "typescript/lib/tsserverlibrary" {
     }
 }
 
+// TODO: from TS internals :/
+function arrayIterator<T>(array: readonly T[]): Iterator<T> {
+    let i = 0;
+    return { next: () => {
+        if (i === array.length) {
+            return { value: undefined as never, done: true };
+        }
+        else {
+            i++;
+            return { value: array[i - 1], done: false };
+        }
+    }};
+}
+
+function mapIterator<T, U>(iter: Iterator<T>, mapFn: (x: T) => U): Iterator<U> {
+    return {
+        next() {
+            const iterRes = iter.next();
+            return iterRes.done ? iterRes as { done: true, value: never } : { value: mapFn(iterRes.value), done: false };
+        }
+    };
+}
+
 export interface LSPSessionOptions {
     host: ts.server.ServerHost;
     cancellationToken: ts.server.ServerCancellationToken;
@@ -50,7 +73,7 @@ interface ProjectScriptInfoRange extends ProjectScriptInfo {
 }
 
 interface ProjectServiceWithInternals extends ts.server.ProjectService {
-    applyChangesToFile(scriptInfo: ts.server.ScriptInfo, changes: ts.TextChange[]): void;
+    applyChangesToFile(scriptInfo: ts.server.ScriptInfo, changes: Iterator<ts.TextChange>): void;
 }
 
 type ITypingsInstaller = any;
@@ -257,7 +280,7 @@ export class Session {
                 this.logger.info("no source file returned");
             }
 
-            const changes: ts.TextChange[] = params.contentChanges.map(c => {
+            const changes: Iterator<ts.TextChange> = mapIterator(arrayIterator(params.contentChanges), c => {
                 if (c.range) {
                     const start = this.getPosition(c.range.start, scriptInfo);
                     const end = this.getPosition(c.range.end, scriptInfo);
@@ -440,9 +463,9 @@ export class Session {
                     includeExternalModuleExports: true,
                     includeInsertTextCompletions: true
                 };
-
+                const sourceFile = this.getSourceFile(project, scriptInfo.fileName);
                 const completions = project.getLanguageService().getCompletionsAtPosition(scriptInfo.fileName, position, options);
-                return completions ? completions.entries.map(e => toCompletionItem(e, textDocumentPosition)) : [];
+                return completions ? completions.entries.map(e => toCompletionItem(sourceFile, e, textDocumentPosition)) : [];
             }).reduce((_prev, curr) => curr, []);
     }
 

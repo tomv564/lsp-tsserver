@@ -48,7 +48,7 @@ test("toCompletionItem", t => {
         hasAction: true,
     };
 
-    const item = toCompletionItem(entry, position);
+    const item = toCompletionItem(sourceFile, entry, position);
 
     t.isEqual(item.data.source, entry.source);
     t.end();

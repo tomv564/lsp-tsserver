@@ -134,7 +134,7 @@ export function toDocumentHighlight(sourceFile: ts.SourceFile, span: ts.Highligh
     };
 }
 
-export function toCompletionItem(entry: ts.CompletionEntry, textDocumentPosition: TextDocumentPositionParams): CompletionItem {
+export function toCompletionItem(sourceFile: ts.SourceFile, entry: ts.CompletionEntry, textDocumentPosition: TextDocumentPositionParams): CompletionItem {
     const item: CompletionItem = { label: entry.name };
     const completionKind = completionKinds[entry.kind];
     if (completionKind && typeof(completionKind) === "number") {
@@ -145,13 +145,7 @@ export function toCompletionItem(entry: ts.CompletionEntry, textDocumentPosition
     }
     if (entry.replacementSpan) {
         // TODO: make a textEdit, need sourceFile
-        // item.textEdit = {
-        //     range: {
-        //         start: { line: entry.replacementSpan., character, }
-        //     }
-        //     newText: entry.insertText
-        // }
-
+        item.textEdit = toTextEdit(sourceFile, entry.replacementSpan, entry.insertText);
     }
     if (entry.sortText) {
         item.sortText = entry.sortText;
