@@ -27,7 +27,7 @@ if (typeof global !== "undefined" && global.gc) {
 
 sys.require = (initialDir: string, moduleName: string): ts.server.RequireResult => {
     try {
-        return { module: require(ts.resolveJavaScriptModule(moduleName, initialDir, sys)), error: undefined };
+        return { module: require(ts.resolveJSModule(moduleName, initialDir, sys)), error: undefined };
     } catch (error) {
         return { module: undefined, error };
     }

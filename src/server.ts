@@ -10,7 +10,7 @@ import { LSPLogger } from "./logger";
 import { createSession, LSPSessionOptions } from "./session";
 
 declare module "typescript/lib/tsserverlibrary" {
-    function resolveJavaScriptModule(moduleName: string, initialDir: string, sys: ModuleResolutionHost): string;
+    function resolveJSModule(moduleName: string, initialDir: string, sys: ModuleResolutionHost): string;
     namespace server {
         // moved to jsTypings/shared.ts in typescript 3.0.1
         function findArgument(argumentName: string): string | undefined;
@@ -36,7 +36,7 @@ if (typeof global !== "undefined" && global.gc) {
 
 sys.require = (initialDir: string, moduleName: string): ts.server.RequireResult => {
     try {
-        return { module: require(ts.resolveJavaScriptModule(moduleName, initialDir, sys)), error: undefined };
+        return { module: require(ts.resolveJSModule(moduleName, initialDir, sys)), error: undefined };
     } catch (error) {
         return { module: undefined, error };
     }
