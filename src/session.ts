@@ -23,8 +23,7 @@ function arrayIterator<T>(array: readonly T[]): Iterator<T> {
     return { next: () => {
         if (i === array.length) {
             return { value: undefined as never, done: true };
-        }
-        else {
+        } else {
             i++;
             return { value: array[i - 1], done: false };
         }
@@ -127,6 +126,7 @@ export class Session {
     // private canUseEvents: boolean;
 
     private openFiles = new Set<string>();
+    private filesWithDiagnostics = new Set<string>();
     private connection: IConnection;
     private clientCapabilites: ClientCapabilities;
 
@@ -665,6 +665,22 @@ export class Session {
             project.getLanguageService().getSyntacticDiagnostics(file)
             .concat(project.getLanguageService().getSemanticDiagnostics(file))
             .concat(project.getLanguageService().getSuggestionDiagnostics(file));
+
+        if (!this.filesWithDiagnostics.has(file)) {
+            if (!diags.length) {
+                // this.logger.info("No diags yet for " + file);
+                return;
+            } else {
+                // this.logger.info("Received diags for " + file);
+                this.filesWithDiagnostics.add(file);
+            }
+        } else {
+            if (!diags.length) {
+                // this.logger.info("Diags fixed for " + file);
+                this.filesWithDiagnostics.delete(file);
+            }
+        }
+
         this.connection.sendDiagnostics({
             uri: path2uri(file),
             diagnostics: diags.map(convertTsDiagnostic),

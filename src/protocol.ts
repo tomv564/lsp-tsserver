@@ -5,7 +5,6 @@ import {path2uri} from "./util";
 /**
  * Maps string-based CompletionEntry::kind to enum-based CompletionItemKind
  */
-
 export const completionKinds: { [name: string]: CompletionItemKind } = {
     class: CompletionItemKind.Class,
     constructor: CompletionItemKind.Constructor,
