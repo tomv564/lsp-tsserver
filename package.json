@@ -2,7 +2,7 @@
 	"name": "lsp-tsserver",
 	"bin": "./dist/server.js",
 	"description": "LSP wrapper around tsserver.",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"author": "Tom van Ommeren",
 	"license": "MIT",
 	"engines": {
