@@ -5,6 +5,7 @@ import {path2uri} from "./util";
 /**
  * Maps string-based CompletionEntry::kind to enum-based CompletionItemKind
  */
+
 export const completionKinds: { [name: string]: CompletionItemKind } = {
     class: CompletionItemKind.Class,
     constructor: CompletionItemKind.Constructor,
@@ -22,8 +23,19 @@ export const completionKinds: { [name: string]: CompletionItemKind } = {
     text: CompletionItemKind.Text,
     unit: CompletionItemKind.Unit,
     value: CompletionItemKind.Value,
-    variable: CompletionItemKind.Variable
+    variable: CompletionItemKind.Variable,
+    const: CompletionItemKind.Variable,
+    let: CompletionItemKind.Variable,
+    string: CompletionItemKind.Constant,
+    directory: CompletionItemKind.Folder,
+    jsxAttribute: CompletionItemKind.Property
 };
+
+completionKinds[ts.ScriptElementKind.localFunctionElement] = CompletionItemKind.Function;
+completionKinds[ts.ScriptElementKind.localClassElement] = CompletionItemKind.Class;
+completionKinds[ts.ScriptElementKind.externalModuleName] = CompletionItemKind.Module;
+completionKinds[ts.ScriptElementKind.enumMemberElement] = CompletionItemKind.EnumMember;
+completionKinds[ts.ScriptElementKind.typeParameterElement] = CompletionItemKind.TypeParameter;
 
 export enum CommandNames {
     CodeFix = "codeFix",
