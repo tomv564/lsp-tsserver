@@ -27,7 +27,8 @@ export const completionKinds: { [name: string]: CompletionItemKind } = {
     let: CompletionItemKind.Variable,
     string: CompletionItemKind.Constant,
     directory: CompletionItemKind.Folder,
-    jsxAttribute: CompletionItemKind.Property
+    jsxAttribute: CompletionItemKind.Property,
+    parameter: CompletionItemKind.Variable
 };
 
 completionKinds[ts.ScriptElementKind.localFunctionElement] = CompletionItemKind.Function;
