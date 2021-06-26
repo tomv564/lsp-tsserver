@@ -28,7 +28,10 @@ export const completionKinds: { [name: string]: CompletionItemKind } = {
     string: CompletionItemKind.Constant,
     directory: CompletionItemKind.Folder,
     jsxAttribute: CompletionItemKind.Property,
-    parameter: CompletionItemKind.Variable
+    parameter: CompletionItemKind.Variable,
+    alias: CompletionItemKind.Variable,
+    script: CompletionItemKind.File,
+    type: CompletionItemKind.Class
 };
 
 completionKinds[ts.ScriptElementKind.localFunctionElement] = CompletionItemKind.Function;
